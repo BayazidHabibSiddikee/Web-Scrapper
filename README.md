@@ -16,6 +16,9 @@
 | **Proxy rotation** | Health-checked pool, round-robin/random/best/sticky, httpx/requests/Selenium/Playwright | `examples/proxy_rotation/` |
 | **CAPTCHA solving** | 2captcha + anti-captcha; image, reCAPTCHA v2/v3, hCaptcha, Turnstile | `examples/captcha_solver/` |
 | **Traffic sniffer** | Playwright CDP HAR + mitmproxy addon; HAR→CSV/SQLite/endpoint extraction | `examples/traffic_sniffer/` |
+| **WAF fingerprinting** | Cloudflare/Akamai/Imperva/Sucuri/AWS/Azure/F5 + TLS cert analysis | `examples/waf_fingerprint/` |
+| **Resilience** | Circuit breaker, exponential backoff + jitter, rate limiter, request dedup | `examples/resilience/` |
+| **Fingerprint generator** | Canvas/WebGL/audio/screen/WebRTC noise, deterministic per session | `examples/fingerprint_generator/` |
 | **Master pipeline** | End-to-end pipeline combining all modules | `master_pipeline.py` |
 | **Core module** | Camoufox + Selenium scraper | `scraper.py` |
 
@@ -31,21 +34,28 @@ pip install -r requirements.txt
 ## Tool selection matrix
 
 ```
-┌──────────────────┬───────────────────────────────────────────────────┐
-│ Need             │ Use                                              │
-├──────────────────┼───────────────────────────────────────────────────┤
-│ Screenshot only  │ shot-scraper (CLI) or Playwright screenshot      │
-│ Cloudflare bypass │ Camoufox + Selenium / Playwright                 │
-│ Full DOM scrape  │ Camoufox + Selenium (selectors, clicks)          │
-│ Speed / no JS    │ httpx + parsel (HTTP/2, async)                   │
-│ Production crawl │ Scrapy (pipelines, throttling, feeds)            │
-│ Article content  │ Trafilatura (best), Readability, Newspaper3k     │
-│ Quick extraction │ BeautifulSoup (manual selectors)                 │
-│ Batch screenshots│ Playwright async or shot-scraper batch            │
-│ API discovery     │ crawlers.py --mode api                           │
-│ Site mapping      │ crawlers.py --mode bfs / --mode sitemap          │
-│ Paranoid stealth  │ stealth_profiles.py — "stealth_max" profile      │
-└──────────────────┴───────────────────────────────────────────────────┘
+┌────────────────────┬───────────────────────────────────────────────────────────┐
+│ Need               │ Use                                                      │
+├────────────────────┼───────────────────────────────────────────────────────────┤
+│ Screenshot only    │ shot-scraper (CLI) or Playwright screenshot              │
+│ Cloudflare bypass  │ Camoufox + Selenium / Playwright                         │
+│ Full DOM scrape    │ Camoufox + Selenium (selectors, clicks)                  │
+│ Speed / no JS      │ httpx + parsel (HTTP/2, async)                           │
+│ Production crawl   │ Scrapy (pipelines, throttling, feeds)                    │
+│ Article content    │ Trafilatura (best), Readability, Newspaper3k             │
+│ Quick extraction   │ BeautifulSoup (manual selectors)                         │
+│ Batch screenshots  │ Playwright async or shot-scraper batch                    │
+│ API discovery      │ crawlers.py --mode api                                   │
+│ Site mapping       │ crawlers.py --mode bfs / --mode sitemap                  │
+│ Paranoid stealth   │ stealth_profiles.py — "stealth_max" profile              │
+│ Proxy rotation     │ ProxyManager (round_robin/random/best/sticky)            │
+│ CAPTCHA solving    │ CaptchaSolver (2captcha / anti-captcha)                  │
+│ Traffic capture    │ traffic_sniffer.py (Playwright CDP / mitmproxy)          │
+│ WAF detect         │ waf_fingerprint.py (headers/cookies/TLS/body)            │
+│ Retry / backoff    │ AsyncRetrier + CircuitBreaker + RateLimiter              │
+│ Browser fingerprint│ fingerprint_generator.py (canvas/WebGL/screen/WebRTC)    │
+│ End-to-end         │ master_pipeline.py (all of the above combined)           │
+└────────────────────┴───────────────────────────────────────────────────────────┘
 ```
 
 ## Anti-detection stack (ranked)
@@ -270,6 +280,102 @@ Export HAR to other formats:
 har_to_csv("traffic.har", "output/traffic.csv")
 har_to_sqlite("traffic.har", "output/traffic.db")
 ```
+
+## WAF fingerprinting
+
+`examples/waf_fingerprint/waf_fingerprint.py`
+
+Identifies WAF/CDN/protection from passive signals:
+
+| WAF | Detected by |
+|-----|-------------|
+| **Cloudflare** | `cf-ray`, `cf-clearance` cookie, challenge HTML |
+| **Akamai** | `x-akamai`, `ak_bmsc` cookie |
+| **Imperva / Incapsula** | `incap_ses`, `visid_incap` cookies |
+| **Sucuri** | `sucuri_cloudproxy`, `X-Sucuri` headers |
+| **AWS WAF** | `x-amzn-requestid`, `AWSALB` cookies |
+| **Azure** | `ARRAffinity`, `X-AspNet-Version` |
+| **Fastly** | `server: fastly`, `x-served-by` |
+| **F5 BIG-IP** | `BIGIPSERVER` cookie, `x-bigip` |
+| **FortiWeb** | `FORTIWAFSESSID` cookie |
+| **reCAPTCHA / hCaptcha** | HTML artifacts, site keys |
+
+```python
+from examples.waf_fingerprint.waf_fingerprint import fingerprint_target
+
+report = fingerprint_target("https://example.com")
+print(report["waf"])  # {"name": "Cloudflare", "confidence": "certain", "signals": [...]}
+print(report["tls"])  # TLS cert issuer, version, cipher
+print(report["cookies"])
+print(report["response_time_ms"])
+```
+
+## Resilience: retry, circuit breaker, rate limiting
+
+`examples/resilience/retry_backoff.py`
+
+```python
+from retry_backoff import AsyncRetrier, CircuitBreaker, RateLimiter, resilient
+
+# Exponential backoff + jitter
+retrier = AsyncRetrier(max_attempts=4, base_delay=1.0)
+result = await retrier.call(fetch, url)
+
+# Circuit breaker — stop hammering dead endpoints
+cb = CircuitBreaker(threshold=5, reset_timeout=60)
+with cb:
+    resp = await session.get(url)  # raises if circuit open
+
+# Rate limiter — token bucket
+limiter = AsyncRateLimiter(rate=2.0, burst=5)  # 2 req/s, burst 5
+await limiter.acquire()
+resp = await session.get(url)
+
+# All-in-one decorator
+@resilient(
+    circuit_breaker=cb,
+    rate_limiter=limiter,
+    retrier=AsyncRetrier(max_attempts=3),
+)
+async def scrape(url):
+    return await session.get(url)
+```
+
+## Browser fingerprint generator
+
+`examples/fingerprint_generator/fingerprint_generator.py`
+
+Generate consistent, realistic fingerprints per session:
+
+```python
+from fingerprint_generator import FingerprintProfile, apply_to_playwright
+
+fp = FingerprintProfile(
+    platform="windows",   # windows | mac | linux
+    browser="chrome",     # chrome | firefox | safari | edge
+    locale="en-US",
+)
+
+# Playwright
+ctx_kwargs, init_script = apply_to_playwright(fp)
+context = await browser.new_context(**ctx_kwargs)
+await context.add_init_script(init_script)
+
+# Selenium
+from selenium.webdriver.chrome.options import Options
+opts = Options()
+apply_to_selenium(fp, opts)
+driver = webdriver.Chrome(options=opts)
+```
+
+What it masks:
+- `navigator.webdriver`, `navigator.plugins`, `navigator.languages`
+- `navigator.hardwareConcurrency`, `navigator.deviceMemory`
+- WebGL vendor/renderer
+- Screen resolution + devicePixelRatio
+- Canvas/audio fingerprint noise
+- WebRTC mDNS leak
+- Permission API
 
 ## Master pipeline
 
