@@ -1,41 +1,41 @@
 #!/usr/bin/env python3
 """
-Web Scraper Module
-==================
-Combines Camoufox (anti-detect headless Firefox) + Selenium for:
-  - Cloudflare / anti-bot bypass
-  - Full DOM scraping with Selenium selectors
-  - Page screenshots (PNG / JPEG / full-page)
-  - Extensible extraction pipeline
+scraper.py
+=========
+Camoufox (anti-detect Firefox) + Playwright scraper.
+
+Downloads the full page HTML, extracts text/links/metadata,
+and saves screenshots (viewport or full-page).
+
+Why Playwright instead of Selenium here:
+  - Camoufox sync API exposes a Playwright browser object
+  - Playwright has better async, selectors, and screenshot support
+  - No Selenium/geckodriver bridge needed
 
 Usage:
-    from scraper import scrape
-    data = scrape("https://example.com", screenshot="out.png")
+    from scraper import scrape, screenshot_page, scrape_text
+
+    result = scrape(ScrapeConfig(
+        url="https://example.com",
+        screenshot_path="shot.png",
+        screenshot_full_page=True,
+        wait_seconds=5.0,
+    ))
+    print(result.title, result.text[:200], result.screenshot_path)
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
-import os
 import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Tuple
-
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.action_chains import ActionChains
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import (
-    TimeoutException,
-    NoSuchElementException,
-    WebDriverException,
-)
-from PIL import Image
-import io
+from typing import Optional, List, Dict, Any
 
 logger = logging.getLogger(__name__)
+
 
 # ---------------------------------------------------------------------------
 # Data containers
@@ -53,6 +53,7 @@ class ScrapeResult:
     metadata: Dict[str, Any] = field(default_factory=dict)
     error: Optional[str] = None
 
+
 @dataclass
 class ScrapeConfig:
     url: str
@@ -60,236 +61,152 @@ class ScrapeConfig:
     screenshot_full_page: bool = True
     screenshot_format: str = "png"          # png | jpeg | webp
     wait_seconds: float = 3.0               # extra sleep after load
-    timeout: int = 30                        # page-load timeout (s)
+    timeout: int = 45                        # page-load timeout (s)
     selectors: Optional[Dict[str, str]] = None  # name → CSS selector
     user_agent: Optional[str] = None
     headless: bool = True
     scroll_to_bottom: bool = False
     click_cookie_buttons: bool = True
     extra_wait_for_cloudflare: bool = True
-    window_size: Tuple[int, int] = (1920, 1080)
+    window_size: tuple = (1920, 1080)
+    proxy: Optional[str] = None             # http://host:port or socks5://...
 
 
 # ---------------------------------------------------------------------------
-# Core scraper
+# Core scraper — Playwright + Camoufox
 # ---------------------------------------------------------------------------
 
-def _make_driver(config: ScrapeConfig):
-    """
-    Build a Camoufox-backed Selenium driver.
-    Camoufox handles stealth (TLS fingerprint, canvas noise, WebGL, etc.)
-    """
+async def _scrape_async(config: ScrapeConfig) -> ScrapeResult:
+    """Async implementation using Playwright + Camoufox."""
     try:
-        import camoufox
-        from selenium.webdriver import Firefox
-        from selenium.webdriver.firefox.options import Options
-        from selenium.webdriver.firefox.service import Service
-
-        opts = Options()
-        if config.headless:
-            opts.add_argument("--headless")
-
-        # Window size
-        opts.add_argument(f"--width={config.window_size[0]}")
-        opts.add_argument(f"--height={config.window_size[1]}")
-
-        # Privacy / noise reduction
-        opts.set_preference("dom.webnotifications.enabled", False)
-        opts.set_preference("media.autoplay.default", 0)
-        opts.set_preference("browser.cache.disk.enable", False)
-        opts.set_preference("browser.cache.memory.enable", False)
-
-        if config.user_agent:
-            opts.set_preference("general.useragent.override", config.user_agent)
-
-        # Start Camoufox context (manages Firefox binary internally)
-        # camoufox 1.x API: use as a context manager for automatic cleanup
-        fox = camoufox.start(headless=config.headless)
-        driver = Firefox(
-            executable_path=fox.executable,
-            options=opts,
-            service=Service(fox.executable),
-        )
-        driver.set_page_load_timeout(config.timeout)
-        return driver, fox
-
+        from camoufox import AsyncCamoufox
     except ImportError as exc:
-        raise ImportError(
-            "camoufox package not installed. Run: pip install camoufox"
-        ) from exc
+        return ScrapeResult(url=config.url, error=f"camoufox not installed: {exc}")
 
+    result = ScrapeResult(url=config.url)
 
-def _dismiss_cookies(driver) -> None:
-    """Try common cookie-consent button selectors."""
-    selectors = [
-        "button[id*='cookie' i]",
-        "button[class*='cookie' i]",
-        "#accept-cookies",
-        ".cookie-accept",
-        "[data-testid='cookie-accept']",
-        "button:contains('Accept')",
-        "button:contains('同意')",
-    ]
-    for sel in selectors:
-        try:
-            btn = WebDriverWait(driver, 1).until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, sel))
+    try:
+        # Camoufox manages its own Playwright instance internally.
+        # Do NOT wrap it in async_playwright().
+        async with AsyncCamoufox(
+            headless=config.headless,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+            ],
+        ) as browser:
+            context = await browser.new_context(
+                viewport={"width": config.window_size[0], "height": config.window_size[1]},
+                user_agent=config.user_agent or (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/126.0.0.0 Safari/537.36"
+                ),
+                locale="en-US",
+                timezone_id="America/New_York",
             )
-            btn.click()
-            logger.debug("Dismissed cookie banner via: %s", sel)
-            return
-        except TimeoutException:
-            continue
 
+            # Anti-fingerprinting init script
+            await context.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', { get: () => false });
+                window.chrome = { runtime: {} };
+                Object.defineProperty(navigator, 'plugins', {
+                    get: () => [1, 2, 3, 4, 5]
+                });
+                Object.defineProperty(navigator, 'languages', {
+                    get: () => ['en-US', 'en']
+                });
+            """)
 
-def _scroll_to_bottom(driver) -> None:
-    """Incrementally scroll to trigger lazy-load content."""
-    last_h = driver.execute_script("return document.body.scrollHeight")
-    while True:
-        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-        time.sleep(0.5)
-        new_h = driver.execute_script("return document.body.scrollHeight")
-        if new_h == last_h:
-            break
-        last_h = new_h
-    driver.execute_script("window.scrollTo(0, 0);")
+            page = await context.new_page()
+            page.set_default_timeout(config.timeout * 1000)
 
+            # Navigate
+            await page.goto(config.url, wait_until="domcontentloaded", timeout=config.timeout * 1000)
 
-def _collect_screenshot(driver, config: ScrapeConfig) -> Tuple[Optional[bytes], Optional[str]]:
-    """Take a screenshot and optionally save to disk."""
-    if config.screenshot_path is None:
-        return driver.get_screenshot_as_png(), None
+            # Anti-bot grace period
+            if config.extra_wait_for_cloudflare:
+                await page.wait_for_timeout(min(int((config.wait_seconds + 2) * 1000), 10000))
 
-    path = Path(config.screenshot_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
+            # Extra explicit wait
+            await page.wait_for_timeout(int(config.wait_seconds * 1000))
 
-    if config.screenshot_full_page:
-        try:
-            # Scroll capture stitch
-        except Exception:
-            driver.save_screenshot(str(path))
-    else:
-        driver.save_screenshot(str(path))
+            # Cookie banners
+            if config.click_cookie_buttons:
+                try:
+                    await page.click('button:has-text("Accept")', timeout=2000)
+                except Exception:
+                    pass
 
-    with open(path, "rb") as f:
-        blob = f.read()
-    return blob, str(path)
+            # Lazy-load scroll
+            if config.scroll_to_bottom:
+                await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                await page.wait_for_timeout(1000)
 
+            # Collect data
+            result.url = page.url
+            result.title = await page.title()
+            result.html = await page.content()
+            result.text = await page.evaluate("document.body.innerText")
+            result.links = await page.evaluate(
+                "Array.from(document.querySelectorAll('a[href]')).map(a => a.href)"
+            )
+            result.text = re.sub(r"\n{3,}", "\n\n", result.text).strip()
 
-def _extract_links(driver, base_url: str) -> List[str]:
-    """Pull all href values from anchor tags, resolved to absolute URLs."""
-    from urllib.parse import urljoin
-    links = []
-    for el in driver.find_elements(By.TAG_NAME, "a"):
-        try:
-            href = el.get_attribute("href")
-            if href:
-                links.append(urljoin(base_url, href))
-        except WebDriverException:
-            continue
-    return links
+            # Custom selectors
+            if config.selectors:
+                result.metadata = {}
+                for name, sel in config.selectors.items():
+                    try:
+                        elements = await page.query_selector_all(sel)
+                        if len(elements) == 1:
+                            result.metadata[name] = (await elements[0].text_content()) or ""
+                        else:
+                            result.metadata[name] = [
+                                ((await e.text_content()) or "").strip() for e in elements
+                            ]
+                    except Exception as exc:
+                        logger.warning("Selector [%s] failed: %s", name, exc)
+                        result.metadata[name] = None
 
-
-def _extract_text(driver) -> str:
-    """Get visible text of the <body> element, normalised."""
-    try:
-        body = driver.find_element(By.TAG_NAME, "body")
-        raw = body.text
-        return re.sub(r"\n{3,}", "\n\n", raw).strip()
-    except NoSuchElementException:
-        return ""
-
-
-def _apply_selectors(driver, selectors: Dict[str, str]) -> Dict[str, Any]:
-    """Extract structured data using a dict of name → CSS selector."""
-    data: Dict[str, Any] = {}
-    for name, sel in selectors.items():
-        try:
-            elements = driver.find_elements(By.CSS_SELECTOR, sel)
-            if len(elements) == 1:
-                data[name] = elements[0].text.strip()
-            else:
-                data[name] = [e.text.strip() for e in elements]
-        except WebDriverException as exc:
-            logger.warning("Selector [%s] failed: %s", name, exc)
-            data[name] = None
-    return data
-
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
-def scrape(config: ScrapeConfig) -> ScrapeResult:
-    """
-    High-level scrape entry point.
-    Returns a ScrapeResult dataclass with all collected data.
-    """
-    driver = None
-    fox = None
-    try:
-        driver, fox = _make_driver(config)
-        logger.info("Loading: %s", config.url)
-        driver.get(config.url)
-
-        # Anti-bot grace period
-        if config.extra_wait_for_cloudflare:
-            time.sleep(min(config.wait_seconds + 2, 10))
-
-        # Extra explicit wait
-        time.sleep(config.wait_seconds)
-
-        # Cookie banners
-        if config.click_cookie_buttons:
-            _dismiss_cookies(driver)
-
-        # Lazy-load scroll
-        if config.scroll_to_bottom:
-            _scroll_to_bottom(driver)
-
-        # Screenshot
-        screenshot_blob, screenshot_path = _collect_screenshot(driver, config)
-
-        # Page basics
-        title = driver.title or ""
-        html = driver.page_source
-        text = _extract_text(driver)
-        links = _extract_links(driver, config.url)
-
-        # Custom selectors
-        metadata: Dict[str, Any] = {}
-        if config.selectors:
-            metadata = _apply_selectors(driver, config.selectors)
-
-        return ScrapeResult(
-            url=driver.current_url,
-            title=title,
-            html=html,
-            text=text,
-            screenshot=screenshot_blob,
-            screenshot_path=screenshot_path,
-            links=links,
-            metadata=metadata,
-        )
+            # Screenshot
+            if config.screenshot_path:
+                shot_path = Path(config.screenshot_path)
+                shot_path.parent.mkdir(parents=True, exist_ok=True)
+                await page.screenshot(
+                    path=str(shot_path),
+                    full_page=config.screenshot_full_page,
+                )
+                result.screenshot_path = str(shot_path)
+                result.screenshot = shot_path.read_bytes()
 
     except Exception as exc:
         logger.error("Scrape failed: %s", exc)
-        return ScrapeResult(
-            url=config.url,
-            error=str(exc),
-        )
+        result.error = str(exc)
 
-    finally:
-        if driver:
-            try:
-                driver.quit()
-            except WebDriverException:
-                pass
-        if fox:
-            try:
-                fox.stop()
-            except Exception:
-                pass
+    return result
+
+
+def scrape(config: ScrapeConfig) -> ScrapeResult:
+    """
+    High-level scrape entry point (sync wrapper around async impl).
+    Safe to call from sync code OR from inside a running event loop
+    (spawns a worker thread with its own loop in that case).
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        # No loop running — normal path
+        return asyncio.run(_scrape_async(config))
+
+    # Already inside a running loop (e.g. called from run_pipeline or the
+    # distributed crawler). asyncio.run() would raise RuntimeError, so run
+    # the coroutine in a dedicated thread with its own event loop.
+    import concurrent.futures
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(asyncio.run, _scrape_async(config))
+        return future.result()
 
 
 def screenshot_page(
@@ -335,7 +252,7 @@ if __name__ == "__main__":
         format="%(asctime)s [%(levelname)s] %(message)s",
     )
 
-    parser = argparse.ArgumentParser(description="Web scraper (Camoufox + Selenium)")
+    parser = argparse.ArgumentParser(description="Web scraper (Camoufox + Playwright)")
     parser.add_argument("url", help="Target URL to scrape")
     parser.add_argument("-o", "--output", help="Screenshot output path")
     parser.add_argument("-f", "--full-page", action="store_true", default=True)
@@ -355,6 +272,7 @@ if __name__ == "__main__":
     if result.error:
         print(f"[ERROR] {result.error}")
     else:
+        print(f"URL    : {result.url}")
         print(f"Title  : {result.title}")
         print(f"Links  : {len(result.links)} found")
         if result.screenshot_path:

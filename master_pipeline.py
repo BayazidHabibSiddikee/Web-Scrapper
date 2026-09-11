@@ -271,7 +271,8 @@ async def run_pipeline(
         log.info("=== Step 4: Traffic capture (HAR) ===")
         har_path = str(BASE / "traffic.har")
         try:
-            entries = asyncio.run(_capture_har(url, har_path, backend=backend, wait=wait))
+            # run_pipeline is already async — just await the coroutine directly
+            entries = await _capture_har(url, har_path, backend=backend, wait=wait)
             log.info("  Captured %d entries → %s", len(entries), har_path)
             from examples.traffic_sniffer.traffic_sniffer import har_to_endpoints, analyze_har
             eps = har_to_endpoints(har_path)
@@ -286,6 +287,7 @@ async def run_pipeline(
             log.warning("  Traffic capture failed: %s", exc)
 
     # ── Step 5: Content extraction ────────────────────────────────────────
+    extracted_text = ""
     if extract_content and html:
         log.info("=== Step 5: Content extraction (Trafilatura) ===")
         try:
@@ -294,6 +296,7 @@ async def run_pipeline(
             if article.error:
                 log.warning("  Extraction: %s", article.error)
             else:
+                extracted_text = article.text
                 log.info("  Title  : %s", article.title)
                 log.info("  Author : %s", article.author)
                 log.info("  Text   : %d chars", len(article.text))
@@ -318,7 +321,7 @@ async def run_pipeline(
                 title=results["steps"].get("scrape", {}).get("title", ""),
                 status_code=200,
                 content_type="text/html",
-                text=results["steps"].get("extraction", {}).get("text_chars", 0),
+                text=extracted_text,
                 links=[],
                 timestamp=datetime.utcnow().isoformat(),
                 metadata=results,
