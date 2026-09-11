@@ -19,6 +19,8 @@
 | **WAF fingerprinting** | Cloudflare/Akamai/Imperva/Sucuri/AWS/Azure/F5 + TLS cert analysis | `examples/waf_fingerprint/` |
 | **Resilience** | Circuit breaker, exponential backoff + jitter, rate limiter, request dedup | `examples/resilience/` |
 | **Fingerprint generator** | Canvas/WebGL/audio/screen/WebRTC noise, deterministic per session | `examples/fingerprint_generator/` |
+| **Distributed crawler** | Redis-backed task queue, master/worker, result stream | `examples/distributed_crawler/` |
+| **WAF → auto backend** | master_pipeline.py auto-selects Camoufox/Playwright/httpx from WAF detection | `master_pipeline.py` |
 | **Master pipeline** | End-to-end pipeline combining all modules | `master_pipeline.py` |
 | **Core module** | Camoufox + Selenium scraper | `scraper.py` |
 
@@ -54,6 +56,8 @@ pip install -r requirements.txt
 │ WAF detect         │ waf_fingerprint.py (headers/cookies/TLS/body)            │
 │ Retry / backoff    │ AsyncRetrier + CircuitBreaker + RateLimiter              │
 │ Browser fingerprint│ fingerprint_generator.py (canvas/WebGL/screen/WebRTC)    │
+│ Distributed crawl  │ distributed_crawler.py (Redis task queue, master/worker) │
+│ Auto backend       │ master_pipeline.py --profile auto (WAF-aware)            │
 │ End-to-end         │ master_pipeline.py (all of the above combined)           │
 └────────────────────┴───────────────────────────────────────────────────────────┘
 ```
@@ -382,26 +386,60 @@ What it masks:
 `master_pipeline.py` — run everything in one shot:
 
 ```bash
-# Basic pipeline
-python master_pipeline.py https://example.com
+# Auto-detect WAF and select best backend
+python master_pipeline.py https://example.com --profile auto
 
-# With proxy + HAR capture + CAPTCHA solving
+# Force specific backend
+python master_pipeline.py https://example.com --profile cloudflare --use-proxy
+
+# Full run: proxy + HAR + CAPTCHA + stealth
 python master_pipeline.py https://example.com \
   --use-proxy \
   --capture-har \
-  --har-backend playwright \
   --solve-captcha \
-  --profile stealth_max \
-  --wait 8.0
+  --profile auto
 ```
 
-Pipeline steps:
-1. Proxy rotation (optional)
-2. Screenshot + stealth scrape (Camoufox/Playwright/UC)
-3. CAPTCHA detection + solving (optional, requires API key)
-4. Network traffic capture → HAR (optional)
-5. Content extraction → Trafilatura clean text
-6. Export → JSON + CSV + Markdown + HTML + SQLite
+### Auto backend selection
+
+When `--profile auto`, the pipeline:
+
+1. **Fingerprints the WAF** via headers/cookies/TLS/body
+2. **Selects backend**:
+   - Cloudflare/Akamai/Imperva/Sucuri → **Camoufox** + Selenium
+   - AWS WAF/Azure/Fastly/F5 → **Playwright** + max stealth
+   - Bot protection/captcha → **Playwright** + stealth patches
+   - No WAF detected → **httpx** + parsel (fast, no browser)
+3. **Generates fingerprint** — canvas/WebGL/audio/screen noise consistent per session
+4. Runs scrape → extract → export
+
+## Distributed crawler
+
+`examples/distributed_crawler/distributed_crawler.py`
+
+Redis-backed master/worker crawler for large-scale jobs.
+
+```bash
+# Terminal 1 — master: seed URLs
+python examples/distributed_crawler/distributed_crawler.py master \
+  --seeds urls.txt --max-pages 1000
+
+# Terminal 2+ — workers
+python examples/distributed_crawler/distributed_crawler.py worker \
+  --concurrency 5 --profile cloudflare --use-proxy
+
+# Monitor
+python examples/distributed_crawler/distributed_crawler.py status
+```
+
+Features:
+- Master/worker architecture
+- Redis queue with priority scoring
+- Seen-set deduplication (SHA-256 URL keys)
+- Result stream for downstream processing
+- In-memory fallback if Redis isn’t available
+- Per-worker concurrency control
+- WAF-aware auto backend in workers
 
 ## Anti-bot bypass tips
 
