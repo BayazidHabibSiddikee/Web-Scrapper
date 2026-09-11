@@ -1,0 +1,18 @@
+# Default crawler settings
+crawler:
+  max_pages: 50
+  max_depth: 2
+  download_delay: 1.0        # seconds between requests
+  concurrent_requests: 4
+  same_domain: true
+  timeout: 15                 # request timeout in seconds
+  user_agent: "Mozilla/5.0 (compatible; ScrapyKit/1.0; +https://example.com/bot)"
+
+stealth:
+  default_profile: "cloudflare"
+  auto_dismiss_cookies: true
+  scroll_to_bottom: false
+
+output:
+  base_dir: "output"
+  formats: ["json", "csv", "markdown", "html", "sqlite"]

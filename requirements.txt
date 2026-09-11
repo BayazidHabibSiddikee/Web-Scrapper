@@ -1,0 +1,51 @@
+# Web Scraper Toolkit — Core dependencies
+# Activate venv first: source venv/bin/activate
+
+# ── HTTP ──────────────────────────────────────────────────────────────────
+httpx[http2]==0.28.1          # async HTTP client with HTTP/2
+requests==2.32.3              # sync HTTP (crawlers, content extractors)
+
+# ── Browser automation ─────────────────────────────────────────────────────
+playwright==1.49.0            # Chromium/Firefox/WebKit automation
+selenium==4.27.1              # WebDriver bindings
+undetected-chromedriver==3.5.5  # Chrome anti-detect driver
+camoufox==1.1.0               # anti-detect headless Firefox (TLS/canvas/WebGL stealth)
+
+# ── HTML parsing ───────────────────────────────────────────────────────────
+beautifulsoup4==4.13.3        # DOM parsing
+lxml==5.3.1                   # fast XML/HTML parser backend
+parsel==1.9.0                 # Scrapy-style CSS/XPath selectors
+selectolax==0.3.30            # ultra-fast HTML parser (optional)
+
+# ── Content extraction ─────────────────────────────────────────────────────
+trafilatura==1.6.5            # best-in-class article extraction
+readability-lxml==0.9.1       # Mozilla readability port
+newspaper3k==0.2.8            # article + NLP (keywords, summary)
+
+# ── Screenshots / PDF ──────────────────────────────────────────────────────
+pillow==11.1.0               # image processing
+pdfkit==1.0.0                # HTML → PDF (requires wkhtmltopdf binary)
+weasyprint==62.3             # HTML → PDF (pure Python, no binary)
+
+# ── Screenshot CLIs ────────────────────────────────────────────────────────
+# shot-scraper      → pip install shot-scraper
+# chromium-screenshot → pip install chromium-screenshot
+
+# ── Data / output ──────────────────────────────────────────────────────────
+# sqlite3           → built into Python
+# csv/json/markdown → built into Python
+
+# ── Scrapy framework ───────────────────────────────────────────────────────
+# scrapy==2.12.0    # full scraping framework (uncomment if needed)
+
+# ── CAPTCHA solving ────────────────────────────────────────────────────────
+# 2captcha / anti-captcha are API services, no pip package needed
+# Install their Python clients if desired:
+# pip install 2captcha-python anti-captcha-solver
+
+# ── Traffic capture ────────────────────────────────────────────────────────
+# mitmproxy        → pip install mitmproxy  (for traffic_sniffer mitmproxy backend)
+# playwright       → already listed above (CDP HAR capture backend)
+
+# ── Proxy rotation ─────────────────────────────────────────────────────────
+# fake-useragent==1.5.1  # random UA rotation (optional)

@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
+env/
+.env
+*.egg-info/
+dist/
+build/
+.eggs/
+pip-wheel-metadata/
+*.egg
+
+# Scrapy
+scrapy_projects/.scrapy/
+scrapy_projects/*.log
+scrapy_projects/*.jsonl
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE
+.idea/
+.vscode/
+*.sublime-*
+
+# Project output
+output/
+screenshots/
+shots/
+*.png
+*.jpg
+*.jpeg
+*.pdf
+*.html
+*.csv
+*.json
+*.db
+*.sqlite
+
+# Temp
+_tmp_*
+*.tmp
+*.cache
+
+# Secrets
+config/secrets.yaml
+config/proxies.txt
+*.pem
+*.key

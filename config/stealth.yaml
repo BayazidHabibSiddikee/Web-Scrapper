@@ -1,0 +1,25 @@
+# Stealth profile overrides
+# These extend the built-in profiles in examples/stealth/stealth_profiles.py
+# Values here override defaults for the matching profile name.
+
+cloudflare:
+  extra_wait_seconds: 6.0
+  scroll_to_bottom: false
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+
+bot_detected:
+  extra_wait_seconds: 3.0
+  scroll_to_bottom: true
+
+stealth_max:
+  extra_wait_seconds: 10.0
+  headless: true
+  window_size: [1920, 1080]
+
+crawler:
+  download_delay: 1.5
+  concurrent_requests: 2
+
+screenshot:
+  wait_seconds: 4.0
+  full_page: true
