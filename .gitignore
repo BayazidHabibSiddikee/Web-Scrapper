@@ -32,10 +32,10 @@ Thumbs.db
 .vscode/
 *.sublime-*
 
-# Project output
-output/
-screenshots/
-shots/
+# Project output (root-level only — keep examples/output/ + docs/ tracked)
+/output/
+/screenshots/
+/shots/
 *.png
 *.jpg
 *.jpeg
@@ -45,6 +45,12 @@ shots/
 *.json
 *.db
 *.sqlite
+
+# ...but keep repo documentation assets and example code
+!docs/
+!docs/**
+!examples/output/
+!examples/output/*.py
 
 # Temp
 _tmp_*
