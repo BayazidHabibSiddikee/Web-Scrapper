@@ -172,18 +172,31 @@ async def scrape_and_grab(url: str, out_dir: Path, max_images: int = 25,
 
 
 async def main():
-    targets = [
-        ("https://github.com", "output/images/github"),
-        ("https://www.python.org", "output/images/pythonorg"),
-        ("https://news.ycombinator.com", "output/images/hackernews"),
-    ]
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Scrape pages and download their images")
+    parser.add_argument("urls", nargs="*", help="URL(s) to grab (default: demo sites)")
+    parser.add_argument("--out", default="output/images", help="Base output dir")
+    parser.add_argument("--max", type=int, default=25, help="Max images per site")
+    parser.add_argument("--min-size", type=int, default=5000, help="Skip images under N bytes")
+    parser.add_argument("--screenshot", action="store_true", default=True)
+    args = parser.parse_args()
+
+    if args.urls:
+        targets = [(u, _slug_for(u)) for u in args.urls]
+    else:
+        targets = [
+            ("https://github.com", "github"),
+            ("https://www.python.org", "pythonorg"),
+            ("https://news.ycombinator.com", "hackernews"),
+        ]
 
     all_results = []
-    for url, out_dir in targets:
-        out = Path(out_dir)
+    for url, slug in targets:
+        out = Path(args.out) / slug
         out.mkdir(parents=True, exist_ok=True)
         log.info("=== %s → %s ===", url, out)
-        r = await scrape_and_grab(url, out, max_images=25, min_size=5000)
+        r = await scrape_and_grab(url, out, max_images=args.max, min_size=args.min_size)
         all_results.append(r)
 
     print("\n" + "=" * 60)
@@ -194,6 +207,22 @@ async def main():
             print(f"  ✗ {r['url']}: {r['error'][:60]}")
         else:
             print(f"  ✓ {r['url']}: {r['images_saved']} images, {r['total_kb']} KB, shot: {r['screenshot']}")
+
+
+def _slug_for(url: str) -> str:
+    """Derive a safe output subfolder name from a URL."""
+    from urllib.parse import urlparse
+    import re
+    p = urlparse(url)
+    domain = p.netloc.replace("www.", "").replace(":", "_")
+    tail = re.sub(r"[^a-zA-Z0-9]", "_", p.path)[:40].strip("_")
+    # youtube watch pages: use the video id
+    if "youtube.com" in domain and "v=" in url:
+        import urllib.parse as up
+        qs = dict(up.parse_qsl(p.query))
+        if "v" in qs:
+            tail = f"vid_{qs['v']}"
+    return f"{domain}_{tail}".strip("_") if tail else domain
 
 
 if __name__ == "__main__":
