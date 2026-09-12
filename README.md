@@ -8,6 +8,26 @@
 python master_pipeline.py https://example.com
 ```
 
+## 📸 Real output
+
+All screenshots below were captured by this toolkit — full-page stealth renders through Camoufox, no manual touch-ups.
+
+### GitHub — full-page scrape
+
+The complete github.com landing page (originally 1920×11809 px) captured in a single run, with 22 images (2.6 MB) downloaded alongside it.
+
+![GitHub full-page scrape](docs/screenshots/github_fullpage.png)
+
+### Python.org
+
+![Python.org scrape](docs/screenshots/python_org.png)
+
+### Hacker News
+
+A Cloudflare-aware scrape of a minimal, JS-light site:
+
+![Hacker News scrape](docs/screenshots/hackernews.png)
+
 ---
 
 ## ✨ Highlights
