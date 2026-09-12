@@ -62,6 +62,17 @@ def decide_backend(waf_report: dict) -> dict:
     heavy = {"cloudflare", "akamai", "imperva", "sucuri", "aws waf", "azure / microsoft"}
     medium = {"fastly", "f5 big-ip / asm", "barracuda", "fortinet fortiweb", "ddos-guard"}
 
+    status = waf_report.get("status_code", 0)
+
+    # Non-200 on first touch = hostile target. Never trust the fast backend.
+    if status == 0 or status >= 400:
+        return {
+            "backend": "camoufox",
+            "profile": "cloudflare",
+            "reason": f"Target returned HTTP {status or 'no response'} — escalating to stealth browser",
+            "waf": waf,
+        }
+
     if name == "unknown":
         return {
             "backend": "httpx",
@@ -312,7 +323,8 @@ async def run_pipeline(
             log.warning("  Extraction failed: %s", exc)
 
     # ── Step 6: Export ────────────────────────────────────────────────────
-    if export:
+    scrape_ok = not results["steps"].get("scrape", {}).get("error")
+    if export and scrape_ok:
         log.info("=== Step 6: Export (all formats) ===")
         try:
             from examples.output.output_formats import ScrapeRecord, export_all
@@ -332,6 +344,8 @@ async def run_pipeline(
             results["steps"]["output"] = outputs
         except Exception as exc:
             log.warning("  Export failed: %s", exc)
+    elif export and not scrape_ok:
+        log.warning("=== Step 6: Skipped export — scrape failed, nothing to export ===")
 
     # ── Proxy stats ───────────────────────────────────────────────────────
     if proxy_mgr:
