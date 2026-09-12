@@ -25,7 +25,7 @@ import asyncio
 import logging
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -171,7 +171,7 @@ async def run_pipeline(
     """
     results = {
         "url": url,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "steps": {},
         "waf": None,
         "backend": None,
@@ -261,6 +261,8 @@ async def run_pipeline(
             html = await _scrape_httpx(url, results, wait=wait)
     except Exception as exc:
         log.warning("  Scrape failed: %s", exc)
+        results["steps"]["scrape"] = {"backend": backend, "error": str(exc)}
+        html = None
 
     # ── Step 3: CAPTCHA solving ───────────────────────────────────────────
     if solve_captcha and html:
@@ -335,7 +337,7 @@ async def run_pipeline(
                 content_type="text/html",
                 text=extracted_text,
                 links=[],
-                timestamp=datetime.utcnow().isoformat(),
+                timestamp=datetime.now(timezone.utc).isoformat(),
                 metadata=results,
             )
             outputs = export_all([record], base_name=str(BASE / "pipeline"))
