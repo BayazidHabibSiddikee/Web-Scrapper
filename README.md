@@ -388,7 +388,7 @@ The toolkit is smoke-tested end-to-end against live sites:
 - `examples/content_extract/saas_extract.py` — multi-page marketing extraction (live-tested)
 - `examples/content_extract/markitdown_convert.py` — HTML→Markdown conversion (live-tested)
 - `form_fill.py` — extract + fill + submit on httpbin.org/forms/post (radios, multi-checkbox, textarea, screenshot) — verified server-side echo shows correct values
-- `captcha_flow.py` — widget detection live-verified on Google's reCAPTCHA demo; keyless failure path returns a clean error
+- `captcha_flow.py` — free-first flow live-verified: Scrapling's keyless pass cleared nowsecure.nl's Cloudflare challenge (HTTP 200), Turnstile token verification reports honestly (`cloudflare-free` vs `turnstile-free`); reCAPTCHA demo detection extracts the real sitekey; keyless reCAPTCHA/hCaptcha fails with a clear escalation message
 - `cookies.py` — browser detection + domain-scoped extraction verified on this machine (brave store)
 - `agent_tools.py` + `mcp_server.py` — 13-tool MCP handshake verified live (list_tools + fetch/rss_read/convert_html calls, graceful is_error path)
 - `grab_images.py` — GitHub (22 images, 2.6 MB), python.org (5 images), Hacker News
@@ -396,9 +396,11 @@ The toolkit is smoke-tested end-to-end against live sites:
 
 ## 🗺️ Roadmap
 
-- [ ] WAF-aware session persistence (reuse cf_clearance cookies)
+- [x] Scrapling as a first-class backend + free CAPTCHA flow (merged)
+- [x] Agent integration: MCP server, 13-tool façade, SKILL.md (merged)
+- [x] cf_clearance-style session persistence (Scrapling sessions reuse the cleared context)
+- [x] Sitemap-driven crawling (`agent_tools.py sitemap_crawl`)
 - [ ] Browserless/ScrapingBee API integration as optional fallback
-- [ ] Sitemap-driven distributed crawling
 - [ ] Diff-based change detection for periodic re-scrapes
 
 ## 🙏 Attribution
