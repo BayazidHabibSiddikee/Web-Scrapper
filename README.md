@@ -62,6 +62,7 @@ A Cloudflare-aware scrape of a minimal, JS-light site:
 | **SaaS site extractor** | Homepage + marketing subpages → structured content | `examples/content_extract/saas_extract.py` |
 | **File → Markdown** | PDF/DOCX/XLSX/PPTX/images/audio/HTML → clean Markdown | `examples/content_extract/markitdown_convert.py` |
 | **SSRF guards** | Private/metadata-IP rejection for untrusted URLs | `security_utils.py` |
+| **MedEx pharma scraper** | Domain-specialist merge from ~/Downloads/scraper: 25k-brand Bangladesh drug DB (indications/dosage/৳prices), async HTTP/2 + backoff + stealth escalation + resume | `medex_scraper.py` |
 | **Form engine** | Extract form schema + auto-fill + submit (text/select/radio/checkbox) | `form_fill.py` |
 | **CAPTCHA live flow** | Detect widget → solve → inject token → submit (Playwright/Camoufox) | `captcha_flow.py`, `examples/captcha_solver/` |
 | **Cookie auth** | Least-privilege cookie extraction from local browsers → `auth_scrape` | `cookies.py` |
@@ -411,7 +412,27 @@ This toolkit is a fusion of several open-source scrapers (merged 2026-09-13):
 - **google-maps-scraper-kit** (Mahanaicoach) wrapping **gosom/google-maps-scraper** (MIT, © Georgios Komninos) — Maps lead-gen client + social enrichment
 - **openshorts** (`saasshorts.py` scraper + `security_utils.py` SSRF guards) — multi-page SaaS content extraction
 - **Agent-Reach** (Panniantong, MIT) — cookie extraction pattern + tool/doctor/agent-facing design
+- **~/Downloads/scraper** (local medex_scraper.py/scraper.py/config.py) — MedEx.com.bd section map, price parsing, captcha markers, resume design
 - **markitdown** (Microsoft, MIT) — universal file→Markdown conversion
+
+## 🐳 Docker
+
+All capabilities ship in one image — Playwright Chromium + Camoufox + deps installed.
+
+```bash
+make docker-build           # builds web-scraper:latest
+docker run --rm -v $(pwd)/output:/app/output web-scraper agent_tools.py --list
+docker run --rm \
+  -e CAPTCHA_API_KEY=$CAPTCHA_API_KEY \
+  -v $(pwd)/output:/app/output web-scraper captcha_flow.py https://site.com
+```
+
+`maps.compose.yml` is kept separate (gosom/google-maps-scraper is a big image with its own
+Playwright stack); mount it alongside when needed.
+
+⚠️ **Caveats:** building depends on pulling `python:3.13-slim-bookworm` from Docker Hub and
+installing Chromium; our mirror was timing out during this session. Build when network clears.
+The Makefile includes a `make install` target for local dev without Docker.
 
 ## ⚠️ Disclaimer
 

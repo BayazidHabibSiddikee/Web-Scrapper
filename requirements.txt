@@ -28,7 +28,7 @@ selectolax==0.3.30            # ultra-fast HTML parser (optional)
 
 # ── Content extraction ─────────────────────────────────────────────────────
 trafilatura==2.2.0            # best-in-class article extraction
-readability-lxml==0.9.1       # Mozilla readability port
+readability-lxml>=0.8.1,<0.10       # Mozilla readability port
 newspaper3k==0.2.8            # article + NLP (keywords, summary)
 
 # ── Screenshots / PDF ──────────────────────────────────────────────────────
