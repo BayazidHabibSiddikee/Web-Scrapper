@@ -70,6 +70,7 @@ class ScrapeConfig:
     extra_wait_for_cloudflare: bool = True
     window_size: tuple = (1920, 1080)
     proxy: Optional[str] = None             # http://host:port or socks5://...
+    cookies: Optional[List[Dict[str, Any]]] = None  # Playwright cookie dicts (cookies.py)
 
 
 # ---------------------------------------------------------------------------
@@ -118,6 +119,14 @@ async def _scrape_async(config: ScrapeConfig) -> ScrapeResult:
                     get: () => ['en-US', 'en']
                 });
             """)
+
+            # Auth cookies (from cookies.py / local browser stores)
+            if config.cookies:
+                try:
+                    await context.add_cookies(config.cookies)
+                    logger.info("Injected %d cookie(s) into context", len(config.cookies))
+                except Exception as exc:
+                    logger.warning("Cookie injection failed: %s", exc)
 
             page = await context.new_page()
             page.set_default_timeout(config.timeout * 1000)

@@ -1,0 +1,21 @@
+# Google Maps scraper backend for web-scraper (merged from google-maps-scraper-kit).
+# Drives maps_scraper.py. Start:  docker compose -f maps.compose.yml up -d
+# API: http://localhost:8080  (gosom/google-maps-scraper image has NO auth —
+# the 127.0.0.1 binding IS the security boundary. Do not expose publicly.)
+
+services:
+  google-maps-scraper:
+    image: gosom/google-maps-scraper:v1.15.0
+    # platform: linux/amd64   # uncomment on Apple Silicon
+    container_name: gmaps-scraper
+    restart: unless-stopped
+    command: ["-web", "-data-folder", "/gmapsdata"]
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - gmaps_data:/gmapsdata
+      - gmaps_cache:/opt
+
+volumes:
+  gmaps_data:
+  gmaps_cache:

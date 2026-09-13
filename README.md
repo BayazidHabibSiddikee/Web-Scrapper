@@ -38,10 +38,17 @@ A Cloudflare-aware scrape of a minimal, JS-light site:
 - 🧬 **Deterministic fingerprint noise** — canvas/WebGL/audio spoofing with consistent per-session seeds, so your fingerprint is realistic but stable
 - 🔁 **Resilience built in** — circuit breakers, exponential backoff with jitter, token-bucket rate limiting, request deduplication
 - 🌐 **Proxy rotation** — health-checked pool with round-robin/random/best/sticky strategies; integrates with requests, httpx, Selenium, and Playwright
-- 🧩 **CAPTCHA solving** — 2captcha/anti-captcha integration for image CAPTCHAs, reCAPTCHA v2/v3, hCaptcha, and Cloudflare Turnstile
+- 🧩 **CAPTCHA solving — free-first** — Scrapling's keyless solver clears Cloudflare interstitials + clicks Turnstile in-session; reCAPTCHA/hCaptcha escalate to 2captcha/anti-captcha only when a paid key is set — *see [caveats](#captcha-solving--free-first)*
 - 🔍 **Traffic sniffing** — record pages to HAR via Playwright CDP or mitmproxy; extract hidden API endpoints, export to CSV/SQLite
 - ⚡ **Distributed crawling** — Redis-backed master/worker architecture with deduplication, priority queues, and stats
 - 📊 **5 export formats** — JSON, CSV, Markdown, dark-mode HTML report, SQLite
+- 🎭 **Scrapling fusion** — curl_cffi TLS-impersonating HTTP, DynamicFetcher, and StealthyFetcher as first-class pipeline backends (`--scrapling`), plus an automatic stealth recovery pass when any backend fails
+- 📍 **Google Maps lead-gen** — `maps_scraper.py`: businesses + phones + emails + socials via the gosom API (Docker), with stealth-enriched websites (urllib → httpx → Camoufox escalation)
+- 🧪 **Universal file → Markdown** — `markitdown_convert.py`: PDF/DOCX/XLSX/PPTX/images/audio/HTML all become clean Markdown
+- 🔒 **SSRF-guarded enrichment** — every user- or listing-supplied URL is validated (no private/link-local/metadata ranges) before any fetcher touches it
+- 📋 **Form engine** — `form_fill.py`: extract a JSON schema of any page's forms, auto-fill text/select/radio/checkbox (case-insensitive label matching), submit — verified end-to-end against httpbin
+- 🤖 **Agent-native** — `agent_tools.py` façade (13 JSON-in/JSON-out tools), **MCP server** (`mcp_server.py`), `SKILL.md` + `llms.txt`: plug the whole arsenal into Claude/agents directly
+- 🍪 **Authenticated scraping** — `cookies.py` reuses your local browser's cookies (domain-scoped, least privilege) for logged-in pages — no password scripts, no 2FA prompts
 
 ## What's in the box
 
@@ -50,6 +57,17 @@ A Cloudflare-aware scrape of a minimal, JS-light site:
 | **Core scraper** | Camoufox + Playwright (download + screenshot + extract) | `scraper.py` |
 | **Image grabber** | Page screenshot + bulk image download | `grab_images.py` |
 | **Master pipeline** | WAF-detect → auto-backend → scrape → extract → export | `master_pipeline.py` |
+| **Scrapling backend** | curl_cffi TLS spoof / DynamicFetcher / StealthyFetcher (+ auto recovery) | `scrapling_backend.py`, `master_pipeline.py --scrapling` |
+| **Google Maps leads** | Business listings + phones/emails/socials (gosom API + stealth enrichment) | `maps_scraper.py` (+ `maps.compose.yml`) |
+| **SaaS site extractor** | Homepage + marketing subpages → structured content | `examples/content_extract/saas_extract.py` |
+| **File → Markdown** | PDF/DOCX/XLSX/PPTX/images/audio/HTML → clean Markdown | `examples/content_extract/markitdown_convert.py` |
+| **SSRF guards** | Private/metadata-IP rejection for untrusted URLs | `security_utils.py` |
+| **Form engine** | Extract form schema + auto-fill + submit (text/select/radio/checkbox) | `form_fill.py` |
+| **CAPTCHA live flow** | Detect widget → solve → inject token → submit (Playwright/Camoufox) | `captcha_flow.py`, `examples/captcha_solver/` |
+| **Cookie auth** | Least-privilege cookie extraction from local browsers → `auth_scrape` | `cookies.py` |
+| **Agent façade** | 13 JSON-in/JSON-out tools (`call_tool`) over the whole arsenal | `agent_tools.py` |
+| **MCP server** | Expose every tool to Claude/agents over stdio | `mcp_server.py` |
+| **Agent docs** | Skill file + machine-readable tool manifest | `SKILL.md`, `llms.txt` |
 | **Screenshots** | Playwright, shot-scraper | `examples/screenshot/` |
 | **Anti-detection** | Camoufox, undetected-chromedriver, selenium-stealth, Playwright stealth | `examples/anti_detection/` |
 | **Content extraction** | Trafilatura, Readability, Newspaper3k, BeautifulSoup | `examples/content_extract/` |
@@ -58,7 +76,6 @@ A Cloudflare-aware scrape of a minimal, JS-light site:
 | **Output formats** | JSON, CSV, Markdown, HTML report, SQLite | `examples/output/` |
 | **Frameworks** | httpx+parsel, Scrapy | `examples/frameworks/` |
 | **Proxy rotation** | Health-checked pool, 4 strategies, all browser integrations | `examples/proxy_rotation/` |
-| **CAPTCHA solving** | 2captcha + anti-captcha; image, reCAPTCHA v2/v3, hCaptcha, Turnstile | `examples/captcha_solver/` |
 | **Traffic sniffer** | Playwright CDP HAR + mitmproxy; HAR→CSV/SQLite/endpoints | `examples/traffic_sniffer/` |
 | **WAF fingerprinting** | 14+ WAFs via headers/cookies/TLS/HTML | `examples/waf_fingerprint/` |
 | **Resilience** | Circuit breaker, backoff+jitter, rate limiter, dedup | `examples/resilience/` |
@@ -164,6 +181,160 @@ python examples/distributed_crawler/distributed_crawler.py status
 
 Falls back to an in-memory queue if Redis isn't running.
 
+### Scrapling backends (`--scrapling`)
+
+Swap the whole backend matrix for Scrapling's fetchers — the TLS-impersonating
+`curl_cffi` HTTP path is strictly stronger than raw `httpx` against detectors
+that check JA3, and StealthyFetcher actively solves Cloudflare challenges:
+
+```bash
+# WAF-detect still picks the tier, but within Scrapling's fetchers
+python master_pipeline.py https://example.com --scrapling --no-screenshot
+
+# Standalone: http (curl_cffi TLS spoof) | dynamic (Playwright) | stealth (Camoufox)
+python scrapling_backend.py https://example.com --mode http -s "heading=h1::text"
+python scrapling_backend.py https://protected.site --mode stealth --solve-cloudflare
+```
+
+Even without `--scrapling`, the pipeline now auto-falls-back to Scrapling
+StealthyFetcher as a **recovery pass** whenever the chosen backend returns
+nothing.
+
+### Google Maps lead-gen
+
+```bash
+# One-time: start the gosom scraper API (localhost-only, no auth — don't expose it)
+docker compose -f maps.compose.yml up -d
+
+python maps_scraper.py "gyms in Miami FL" --city "Miami, FL" --depth 5 --socials
+python maps_scraper.py --keywords-file examples/queries.txt --city "Denver, CO" --json
+```
+
+Per business: name, phone, emails, website, category, address, rating + review
+count, and (with `--socials`) Instagram/Facebook/LinkedIn handles. Website
+visits are stealth-escalated (urllib → httpx HTTP/2 → Camoufox) so sites that
+block plain `urllib` still yield emails/socials — and every URL is SSRF-guarded
+first.
+
+### Extract whole sites / convert files
+
+```bash
+# Homepage + pricing/features/about subpages → structured JSON
+python examples/content_extract/saas_extract.py https://stripe.com --subpages 5
+
+# Any scraped binary → Markdown
+python examples/content_extract/markitdown_convert.py report.pdf -o notes.md
+python examples/content_extract/markitdown_convert.py downloads/ --recursive
+```
+
+### Form filling
+
+```bash
+# 1. See what the agent is dealing with (JSON schema: name/type/required/options)
+python form_fill.py https://httpbin.org/forms/post extract
+
+# 2. Fill + submit — radios/selects match by value OR visible label,
+#    case-insensitive; checkbox groups take lists
+python form_fill.py https://httpbin.org/forms/post fill \
+  --values '{"custname":"John Doe","size":"Medium","topping":["cheese","bacon"]}'
+```
+
+Runs on the stealth stack (Camoufox first), so forms behind bot protection work too.
+
+### CAPTCHA solving — free-first
+
+The flow tries **Scrapling's built-in solver first (no key, no cost)**, which
+gets past Cloudflare interstitials and clicks interactive Turnstile boxes *in
+the same browser session* your form-fill/submit runs in:
+
+```bash
+# Inspect a page for widgets — free
+python captcha_flow.py https://site.com/login --detect-only
+
+# Free-first full flow: solve CF → verify Turnstile token → fill → submit
+python captcha_flow.py https://site.com/login \
+  --pre-fill '{"username":"me","password":"***"}' \
+  --submit "button[type=submit]"
+```
+
+What actually happened comes back explicit and honest (no over-claiming):
+
+```jsonc
+"solved_type": "cloudflare-free",   // interstitial gone; no token was needed
+"solved_type": "turnstile-free",    // widget clicked AND token verified present
+"solved_type": "recaptcha", "paid": true   // escalated to a solver service
+```
+
+A Turnstile only reports `turnstile-free` when a real `cf-turnstile-response`
+token is present in the DOM. On a *test* widget (e.g. nowsecure.nl's `3x…`
+sitekey) the page is readable but no token is issued, so it correctly reports
+`cloudflare-free` rather than pretending it solved the box.
+
+Only **reCAPTCHA v2/v3 and hCaptcha** — plus Turnstile when the free click
+yields no token *and* you've set a key — need the paid escalation:
+
+```bash
+export CAPTCHA_SERVICE=2captcha            # or anti-captcha
+export CAPTCHA_API_KEY=***
+python captcha_flow.py https://site.com/form --type recaptcha
+```
+
+**⚠️ Caveats on the paid path (2captcha / anti-captcha):**
+
+- **Paid third-party services — no free key, no offline mode.** Roughly
+  **$1–3 per 1,000 reCAPTCHA v2 tokens**; solving is crowdsourced, so your
+  sitekey + page URL are sent to their human/AI workers. Failed solves auto-refund.
+- **Latency:** a paid solve takes 15–120s (a human solves it, then you poll).
+- **reCAPTCHA v3 is a score, not a checkbox** — the returned token must clear the
+  *target site's* threshold; expect valid-token-but-rejected outcomes.
+- **The key lives in the server process's environment** — never pass it as a tool
+  argument where it would leak into transcripts/logs.
+- **The free Scrapling pass covers the most common wall** (Cloudflare's own
+  challenge) with none of the above, and it's the default — opt out with `--paid-only`.
+
+
+### Authenticated scraping (reuse your browser session)
+
+```bash
+python cookies.py list                        # which browsers are readable here
+python cookies.py extract github.com -b brave # scoped cookies (SECRET — don't commit)
+python cookies.py scrape https://github.com/settings/profile -b brave
+```
+
+Domain-scoped, least-privilege: only cookies for the exact domain you ask for are
+ever read. Some browsers need to be closed (locked DB) and on Linux, Chrome/Edge
+may prompt for the keyring password.
+
+## 🤖 Using it from an AI agent
+
+The whole arsenal is one façade call away:
+
+```bash
+python agent_tools.py --list
+python agent_tools.py fetch --args '{"url":"https://example.com","selectors":{"t":"title::text"}}'
+python agent_tools.py fill_form --args '{"url":"https://httpbin.org/forms/post","values":{"custname":"Bot"}}'
+```
+
+**MCP server** (works with any MCP client — Claude Desktop/Code, etc.):
+
+```json
+{
+  "mcpServers": {
+    "web-scraper": {
+      "command": "/home/sword/Documents/web-scraper/venv/bin/python",
+      "args": ["/home/sword/Documents/web-scraper/mcp_server.py"]
+    }
+  }
+}
+```
+
+13 tools appear: `scrape`, `fetch`, `grab_images`, `extract_forms`, `fill_form`,
+`solve_captcha`, `maps_leads`, `file_to_markdown`, `saas_extract`, `rss_read`,
+`auth_scrape`, `convert_html`, `sitemap_crawl`. Each returns JSON with an `ok` flag
+and never crashes the server (verified by live handshake). `SKILL.md` teaches agents
+when to pick which; `llms.txt` is the compact machine-readable manifest.
+
+
 ## 🧠 How auto backend selection works
 
 ```
@@ -211,6 +382,15 @@ The toolkit is smoke-tested end-to-end against live sites:
 
 - `scraper.py` — downloads HTML, extracts text/links, saves screenshots (Camoufox + Playwright)
 - `master_pipeline.py` — full auto path: WAF detection → backend selection → extraction → 5-format export
+- `master_pipeline.py --scrapling` — WAF-detect → Scrapling backend → stealth recovery fallback
+- `scrapling_backend.py` — curl_cffi TLS-spoofed fetch + selector extraction (live-tested)
+- `maps_scraper.py` — stealth website enrichment + SSRF guard (live-tested; API job needs `docker compose -f maps.compose.yml up -d`)
+- `examples/content_extract/saas_extract.py` — multi-page marketing extraction (live-tested)
+- `examples/content_extract/markitdown_convert.py` — HTML→Markdown conversion (live-tested)
+- `form_fill.py` — extract + fill + submit on httpbin.org/forms/post (radios, multi-checkbox, textarea, screenshot) — verified server-side echo shows correct values
+- `captcha_flow.py` — widget detection live-verified on Google's reCAPTCHA demo; keyless failure path returns a clean error
+- `cookies.py` — browser detection + domain-scoped extraction verified on this machine (brave store)
+- `agent_tools.py` + `mcp_server.py` — 13-tool MCP handshake verified live (list_tools + fetch/rss_read/convert_html calls, graceful is_error path)
 - `grab_images.py` — GitHub (22 images, 2.6 MB), python.org (5 images), Hacker News
 - Nested event-loop safety — works inside async callers and the distributed crawler
 
@@ -220,6 +400,16 @@ The toolkit is smoke-tested end-to-end against live sites:
 - [ ] Browserless/ScrapingBee API integration as optional fallback
 - [ ] Sitemap-driven distributed crawling
 - [ ] Diff-based change detection for periodic re-scrapes
+
+## 🙏 Attribution
+
+This toolkit is a fusion of several open-source scrapers (merged 2026-09-13):
+
+- **Scrapling** (D4Vinci, BSD-3-Clause) — stealth fetchers, TLS impersonation
+- **google-maps-scraper-kit** (Mahanaicoach) wrapping **gosom/google-maps-scraper** (MIT, © Georgios Komninos) — Maps lead-gen client + social enrichment
+- **openshorts** (`saasshorts.py` scraper + `security_utils.py` SSRF guards) — multi-page SaaS content extraction
+- **Agent-Reach** (Panniantong, MIT) — cookie extraction pattern + tool/doctor/agent-facing design
+- **markitdown** (Microsoft, MIT) — universal file→Markdown conversion
 
 ## ⚠️ Disclaimer
 

@@ -1,24 +1,33 @@
 # Web Scraper Toolkit — Core dependencies
 # Activate venv first: source venv/bin/activate
+# NOTE: pins reflect the versions actually installed & smoke-tested in venv/.
 
 # ── HTTP ──────────────────────────────────────────────────────────────────
 httpx[http2]==0.28.1          # async HTTP client with HTTP/2
-requests==2.32.3              # sync HTTP (crawlers, content extractors)
+requests==2.34.2              # sync HTTP (crawlers, content extractors)
+curl-cffi                      # TLS-impersonating HTTP (Scrapling's fast backend)
 
 # ── Browser automation ─────────────────────────────────────────────────────
-playwright==1.49.0            # Chromium/Firefox/WebKit automation
-selenium==4.27.1              # WebDriver bindings
+playwright==1.62.0            # Chromium/Firefox/WebKit automation
+selenium==4.49.0              # WebDriver bindings
 undetected-chromedriver==3.5.5  # Chrome anti-detect driver
-camoufox==1.1.0               # anti-detect headless Firefox (TLS/canvas/WebGL stealth)
+camoufox==0.5.6               # anti-detect headless Firefox (TLS/canvas/WebGL stealth)
+
+# ── Scraping frameworks (merged) ───────────────────────────────────────────
+scrapling[fetchers]==0.4.15   # undetectable fetchers + spiders (StealthyFetcher/DynamicFetcher/Fetcher)
+markitdown>=0.1.5             # PDF/DOCX/XLSX/PPTX/HTML/images → Markdown (universal converter)
+mcp>=1.0                      # Model Context Protocol server (mcp_server.py — expose tools to AI agents)
+feedparser>=6.0               # RSS/Atom ingestion (agent_tools rss_read)
+browser-cookie3>=0.19         # least-privilege cookie extraction for authenticated scraping
 
 # ── HTML parsing ───────────────────────────────────────────────────────────
-beautifulsoup4==4.13.3        # DOM parsing
-lxml==5.3.1                   # fast XML/HTML parser backend
-parsel==1.9.0                 # Scrapy-style CSS/XPath selectors
+beautifulsoup4==4.15.0        # DOM parsing
+lxml==6.1.3                   # fast XML/HTML parser backend
+parsel==1.11.0                # Scrapy-style CSS/XPath selectors
 selectolax==0.3.30            # ultra-fast HTML parser (optional)
 
 # ── Content extraction ─────────────────────────────────────────────────────
-trafilatura==1.6.5            # best-in-class article extraction
+trafilatura==2.2.0            # best-in-class article extraction
 readability-lxml==0.9.1       # Mozilla readability port
 newspaper3k==0.2.8            # article + NLP (keywords, summary)
 

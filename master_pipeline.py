@@ -19,6 +19,11 @@ Auto-selection logic:
   - Akamai / Imperva / Sucuri / AWS WAF / Azure → Playwright + stealth patches
   - Bot protection / unknown → Playwright + stealth + fingerprint noise
   - No WAF / simple → httpx + parsel (fast, no browser)
+
+Scrapling mode (--scrapling): swaps the backend matrix for Scrapling's
+  fetchers — curl_cffi TLS-impersonating HTTP (no WAF), DynamicFetcher +
+  stealth (medium), and StealthyFetcher + Cloudflare solver (heavy).
+  Also used automatically as a recovery fallback when a scrape errors out.
 """
 
 import asyncio
@@ -43,13 +48,14 @@ BASE.mkdir(exist_ok=True)
 # Backend selection logic
 # ---------------------------------------------------------------------------
 
-def decide_backend(waf_report: dict) -> dict:
+def decide_backend(waf_report: dict, scrapling: bool = False) -> dict:
     """
     Choose scrape backend and profile from WAF fingerprint report.
 
     Returns:
         {
-            "backend": "camoufox" | "playwright" | "httpx",
+            "backend": "camoufox" | "playwright" | "httpx"
+                       | "scrapling-stealth" | "scrapling-dynamic" | "scrapling-http",
             "profile": "cloudflare" | "bot_detected" | "stealth_max" | "crawler",
             "reason": "...",
             "waf": waf_report["waf"],
@@ -63,6 +69,18 @@ def decide_backend(waf_report: dict) -> dict:
     medium = {"fastly", "f5 big-ip / asm", "barracuda", "fortinet fortiweb", "ddos-guard"}
 
     status = waf_report.get("status_code", 0)
+
+    if scrapling:
+        # Scrapling's own escalation ladder: curl_cffi < dynamic < stealth+CF solver
+        if status == 0 or status >= 400 or name in heavy or confidence in {"high", "certain"}:
+            return {"backend": "scrapling-stealth", "profile": "cloudflare",
+                    "reason": f"Heavy protection ({name or f'HTTP {status}'}) — "
+                              "Scrapling StealthyFetcher + Cloudflare solver", "waf": waf}
+        if name in medium:
+            return {"backend": "scrapling-dynamic", "profile": "stealth_max",
+                    "reason": f"Medium WAF ({name}) — Scrapling DynamicFetcher + stealth", "waf": waf}
+        return {"backend": "scrapling-http", "profile": "crawler",
+                "reason": "No WAF — Scrapling curl_cffi with browser TLS impersonation", "waf": waf}
 
     # Non-200 on first touch = hostile target. Never trust the fast backend.
     if status == 0 or status >= 400:
@@ -162,6 +180,7 @@ async def run_pipeline(
     extract_content: bool = True,
     export: bool = True,
     auto_backend: bool = True,
+    scrapling: bool = False,
 ):
     """
     Run the full pipeline on a URL.
@@ -197,7 +216,7 @@ async def run_pipeline(
             log.info("  TLS   : %s", waf_report.get("tls", {}).get("waf_hint", "n/a"))
             log.info("  Status: %s  %.0fms", waf_report.get("status_code"), waf_report.get("response_time_ms"))
 
-            decision = decide_backend(waf_report)
+            decision = decide_backend(waf_report, scrapling=scrapling)
             backend = decision["backend"]
             profile_name = decision["profile"]
             results["backend"] = decision
@@ -224,7 +243,13 @@ async def run_pipeline(
                 wait = 3.0
     else:
         # Manual profile selection
-        backend = "camoufox" if stealth_profile == "cloudflare" else "playwright"
+        if scrapling:
+            backend = ("scrapling-stealth" if stealth_profile == "cloudflare"
+                       else "scrapling-dynamic")
+        elif stealth_profile == "cloudflare":
+            backend = "camoufox"
+        else:
+            backend = "playwright"
         fingerprint, init_script = build_fingerprint(backend, profile_name)
         if wait is None:
             wait = 5.0 if profile_name == "cloudflare" else 3.0
@@ -257,6 +282,10 @@ async def run_pipeline(
                                             fingerprint= fingerprint, init_script=init_script,
                                             screenshot=screenshot, full_page=full_page,
                                             wait=wait, proxy=proxy)
+        elif backend.startswith("scrapling-"):
+            html = await _scrape_scrapling(url, results, mode=backend.split("-", 1)[1],
+                                           proxy=proxy, wait=wait,
+                                           solve_cloudflare=(backend == "scrapling-stealth"))
         else:  # httpx
             html = await _scrape_httpx(url, results, wait=wait)
     except Exception as exc:
@@ -264,20 +293,38 @@ async def run_pipeline(
         results["steps"]["scrape"] = {"backend": backend, "error": str(exc)}
         html = None
 
+    # ── Step 2b: Scrapling recovery fallback ──────────────────────────────
+    # Any primary backend that returns nothing gets one escalation attempt via
+    # Scrapling's StealthyFetcher before we give up on the target entirely.
+    if not html and not backend.startswith("scrapling-"):
+        try:
+            from scrapling_backend import available as scrapling_available
+            if scrapling_available():
+                log.info("=== Step 2b: Scrapling recovery (primary backend returned nothing) ===")
+                html = await _scrape_scrapling(url, results, mode="stealth", proxy=proxy,
+                                               wait=wait, solve_cloudflare=True,
+                                               recovery=True)
+        except ImportError:
+            log.debug("  Scrapling not installed — skipping recovery fallback")
+
     # ── Step 3: CAPTCHA solving ───────────────────────────────────────────
-    if solve_captcha and html:
+    if solve_captcha:
         log.info("=== Step 3: CAPTCHA detection + solving ===")
         try:
-            from examples.captcha_solver.captcha_solver import CaptchaSolver
-            solver = CaptchaSolver(
-                service=captcha_service or os.getenv("CAPTCHA_SERVICE", "2captcha"),
-                api_key=captcha_api_key or os.getenv("CAPTCHA_API_KEY", ""),
-            )
-            log.info("  Solver ready: %s", solver._solver.__class__.__name__)
-            log.info("  (Live solving requires a live browser session with CAPTCHA present)")
-            results["steps"]["captcha"] = {"solver": "ready", "service": solver._solver.__class__.__name__}
+            from captcha_flow import solve_captcha_on_page
+            cf = solve_captcha_on_page(url, screenshot=str(BASE / "captcha_flow.png"))
+            results["steps"]["captcha"] = {
+                "detected": cf.detected, "solved_type": cf.solved_type,
+                "injected": cf.injected, "final_url": cf.final_url,
+                "error": cf.error,
+            }
+            if cf.error:
+                log.warning("  CAPTCHA: %s", cf.error)
+            else:
+                log.info("  Solved %s, token injected=%s", cf.solved_type, cf.injected)
         except Exception as exc:
-            log.warning("  CAPTCHA setup failed: %s", exc)
+            log.warning("  CAPTCHA solving failed: %s", exc)
+            results["steps"]["captcha"] = {"error": str(exc)}
 
     # ── Step 4: Traffic capture ───────────────────────────────────────────
     if capture_har:
@@ -362,6 +409,51 @@ async def run_pipeline(
 # ---------------------------------------------------------------------------
 # Backend-specific scrapers
 # ---------------------------------------------------------------------------
+
+async def _scrape_scrapling(url: str, results: dict, mode: str = "http",
+                             proxy=None, wait: float = 0.0, solve_cloudflare: bool = False,
+                             recovery: bool = False):
+    """Scrape via the Scrapling backend (TLS-impersonating / stealth fetchers)."""
+    from scrapling_backend import scrape_scrapling, async_scrape_scrapling
+    proxy_url = None
+    if proxy:
+        scheme = "socks5" if getattr(proxy, "type", "") == "socks5" else "http"
+        auth = f"{proxy.username}:{proxy.password}@" if getattr(proxy, "username", "") else ""
+        proxy_url = f"{scheme}://{auth}{proxy.host}:{proxy.port}"
+
+    sr = await async_scrape_scrapling(
+        url, mode=mode, proxy=proxy_url,
+        solve_cloudflare=solve_cloudflare,
+        wait=wait if mode != "http" else 0.0,
+    )
+    step_key = "scrape_recovery" if recovery else "scrape"
+    if sr.error or sr.status >= 400:
+        results["steps"][step_key] = {
+            "backend": f"scrapling-{mode}",
+            "error": sr.error or f"HTTP {sr.status}",
+            "status": sr.status,
+        }
+        log.warning("  Scrapling (%s) failed: %s (HTTP %s)",
+                    mode, sr.error or "", sr.status)
+        return None
+
+    entry = {
+        "backend": f"scrapling-{mode}",
+        "status": sr.status,
+        "title": sr.title,
+        "links_count": len(sr.links),
+        "text_chars": len(sr.text),
+        "elapsed_ms": round(sr.elapsed_ms),
+    }
+    if recovery:
+        # Recovery succeeded — promote it so the summary shows a working scrape
+        results["steps"]["scrape"] = entry
+        results["steps"]["scrape_recovery"] = {**entry, "note": "recovered via Scrapling stealth"}
+    else:
+        results["steps"]["scrape"] = entry
+    log.info("  Title  : %s  (%.0f ms)", sr.title, sr.elapsed_ms)
+    return sr.html
+
 
 async def _scrape_camoufox(url: str, results: dict, screenshot: bool = True,
                             full_page: bool = True, wait: float = 5.0, proxy=None):
@@ -548,6 +640,8 @@ def main():
     parser.add_argument("--wait", type=float, default=None)
     parser.add_argument("--no-extract", action="store_true")
     parser.add_argument("--no-export", action="store_true")
+    parser.add_argument("--scrapling", action="store_true",
+                        help="Use Scrapling fetchers (curl_cffi TLS spoof / stealth / dynamic)")
     args = parser.parse_args()
 
     results = asyncio.run(run_pipeline(
@@ -566,6 +660,7 @@ def main():
         extract_content=not args.no_extract,
         export=not args.no_export,
         auto_backend=args.profile == "auto" and not args.no_auto,
+        scrapling=args.scrapling,
     ))
 
     # Summary

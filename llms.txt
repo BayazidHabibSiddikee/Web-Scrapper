@@ -1,0 +1,41 @@
+# Web Scraper Toolkit
+
+> Production-grade, agent-operable web scraping arsenal. Stealth browsing (Camoufox/
+> Scrapling/Playwright), WAF-aware backend selection, form detection + auto-filling,
+> CAPTCHA solving (2captcha/anti-captcha), Google Maps lead-gen, file→Markdown
+> conversion (PDF/DOCX/XLSX/images), authenticated scraping via local browser cookies,
+> RSS, sitemap crawling, proxy rotation, traffic capture (HAR), distributed crawling.
+> MCP server included: `venv/bin/python mcp_server.py` (stdio).
+
+- Interpreter: `venv/bin/python` inside this directory. All deps installed there.
+- Tool façade (13 capabilities, JSON-in/JSON-out, never raises):
+  `venv/bin/python agent_tools.py <tool> --args '<JSON>'` — list: `--list`
+- MCP config for Claude-style clients:
+  `{"mcpServers": {"web-scraper": {"command": "<abs>/venv/bin/python", "args": ["<abs>/mcp_server.py"]}}}`
+
+## Tools (agent_tools.py)
+
+- scrape: WAF-fingerprint → auto backend (Camoufox/Playwright/httpx/Scrapling) → export JSON/CSV/MD/HTML/SQLite. Args: url, profile?, scrapling?, solve_captcha?, screenshot?
+- fetch: Scrapling TLS-impersonated HTTP (curl_cffi) or stealth/dynamic browser. Args: url, mode?(http|stealth|dynamic), selectors?(dict), impersonate?
+- extract_forms: form + field JSON schema (name/id/label/type/required/options). Args: url
+- fill_form: detect, fill, submit; radio/select matched case-insensitively by value or label; checkbox groups = lists. Args: url, values(dict), submit?, form_index?, screenshot?
+- solve_captcha: detect widget → solve via 2captcha/anti-captcha → inject token → submit. Args: url, type?(auto|recaptcha|recaptcha-v3|hcaptcha|turnstile), site_key?, pre_fill?, submit_selector?
+- maps_leads: Google Maps businesses: title/phone/emails/website/category/address/rating + optional socials. Needs `docker compose -f maps.compose.yml up -d`. Args: keywords[], city?|lat/lon?, depth?, email?, socials?
+- file_to_markdown: PDF/DOCX/XLSX/PPTX/HTML/images/audio/URL → Markdown (markitdown). Args: source, output?, max_chars?
+- convert_html: HTML string → Markdown. Args: html
+- saas_extract: homepage + pricing/features/about subpages → structured content (SSRF-guarded). Args: url, subpages?
+- rss_read: RSS/Atom → items. Args: url, limit?
+- auth_scrape: scrape logged-in pages using local browser cookies (least-privilege, domain-scoped). Args: url, browser?(chrome|firefox|edge|brave|opera)
+- grab_images: full-page screenshot + bulk image download. Args: url|urls[]
+- sitemap_crawl: robots.txt + sitemap.xml URL discovery. Args: url, limit?
+
+## Env / prerequisites
+
+- CAPTCHA solving requires a paid key: `CAPTCHA_API_KEY` (+ `CAPTCHA_SERVICE=2captcha|anti-captcha`).
+- Maps lead-gen requires the local gosom API: `docker compose -f maps.compose.yml up -d` (http://localhost:8080, localhost-only).
+- One-time browser binaries: `camoufox fetch`, `playwright install chromium`.
+
+## Safety
+
+- Respect robots.txt/ToS; scraped contact data is personal — save to disk, don't dump into chat.
+- All untrusted URLs (maps listings, subpage discovery) pass SSRF guards (security_utils.py).
