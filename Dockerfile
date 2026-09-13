@@ -1,7 +1,8 @@
 # Web Scraper Toolkit — production image
-# Build: docker build -t web-scraper .
+# Build: docker build -t web-scraper .  (requires Docker Desktop or podman)
 # Run:   docker run --rm -v /host/output:/app/output web-scraper
 # Environment overrides: CAPTCHA_API_KEY, SCRAPER_BASE_URL, HEADLESS=false
+
 FROM python:3.13-slim-bookworm
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -12,18 +13,17 @@ ENV CAPTCHA_SERVICE=2captcha
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         wget curl git procps less ca-certificates fonts-liberation \
-        chromium chromium-sandbox chromium-codecs-ffmpeg \
-        libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
+        chromium chromium-sandbox libnss3 \
+        libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
         libxkbcommon0 libxdamage1 libxrandr2 libgbm1 libasound2 \
-        libpango-1.0-0 libcairo2 libcogl-pango1.0-0 libcogl20 \
-        libcogl-common libwayland-client0 libxcomposite1 \
-        libopenjp2-7 libwebp6 libepoxy0 liblcms2-2 \
+        libpango-1.0-0 libcairo2 libwayland-client0 libxcomposite1 \
+        libopenjp2-7 libepoxy0 liblcms2-2 libcogl-pango20 libcogl20 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 COPY requirements.txt ./
-RUN python3 -m pip install --upgrade pip setuptools wheel \
+RUN pip install --upgrade pip setuptools wheel \
  && pip install --no-cache-dir -r requirements.txt \
  && playwright install chromium
 
@@ -33,15 +33,14 @@ COPY medex_scraper.py ./
 COPY examples examples/
 COPY config config/
 COPY docs docs/
-COPY Makefile README.md SKILL.md llms.txt ./
+COPY Makefile README.md SKILL.md llms.txt SOCIAL_POSTS.md ./
 COPY maps.compose.yml ./
 
-RUN playwright install-deps chromium || true   # idempotent, may fail gracefully in non-root
+RUN playwright install-deps chromium || true   # idempotent; may fail gracefully in non-root
 
 EXPOSE 8000
 
-ENTRYPOINT ["venv/bin/python"]
-
+ENTRYPOINT ["python"]
 CMD ["--help"]
 
 # Useful shortcuts:
