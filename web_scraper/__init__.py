@@ -4,6 +4,7 @@
 
 from .api import browser_task, scrape_web
 from .browser import BrowserTaskResult
+from .exporters import export_result
 from .scraper import ScrapeResult
 
-__all__ = ["ScrapeResult", "BrowserTaskResult", "browser_task", "scrape_web"]
+__all__ = ["ScrapeResult", "BrowserTaskResult", "browser_task", "scrape_web", "export_result"]

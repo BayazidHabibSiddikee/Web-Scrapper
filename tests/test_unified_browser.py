@@ -3,7 +3,9 @@
 import pytest
 
 from web_scraper.browser import BrowserError
+from web_scraper.exporters import export_result
 from web_scraper.policy import BrowserDecision, _validate
+from web_scraper.verification import verify_goal
 
 
 def test_rejects_unknown_operation():
@@ -45,3 +47,21 @@ def test_should_render_is_opt_in_for_http_only_mode():
     result = scrape_web("https://example.com", render_js=False)
     assert result.ok
     assert result.backend == "httpx"
+
+
+def test_goal_verification_requires_visible_evidence():
+    verified, evidence = verify_goal("Open the contact page", {"url": "https://example.test/contact", "title": "Contact", "text": "Contact us"})
+    assert verified
+    assert evidence["source"] == "visible_page"
+
+
+def test_goal_verification_rejects_model_only_claim():
+    verified, _ = verify_goal("Find the order number", {"url": "https://example.test/", "title": "Home", "text": "Welcome"})
+    assert not verified
+
+
+def test_export_json(tmp_path):
+    from web_scraper.scraper import ScrapeResult
+    output = tmp_path / "result.json"
+    export_result(ScrapeResult(True, "https://example.test", "Example", "Body", [], {}, "httpx"), str(output), "json")
+    assert "Example" in output.read_text()

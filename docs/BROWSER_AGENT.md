@@ -21,12 +21,12 @@ Every observation includes a fingerprint of the page state and visible action se
 
 The executor does not accept model-generated selectors, JavaScript, shell commands, or coordinates. It only resolves IDs observed in the current snapshot.
 
+`DONE` is independently checked against visible page evidence before success is returned. A model-only completion claim can produce an `unverified` result.
 ## Current limits
 
 The current implementation does not yet provide:
 
-- Independent outcome verification for `DONE`
-- Full stable DOM-node identity from `jev-ultrafast`
+- Full atomic DOM-node identity and independent browser verification from `jev-ultrafast`
 - Shadow DOM, frames, canvas, uploads, or arbitrary keyboard scripts
 - Confirmation policies for destructive or financial actions
 
