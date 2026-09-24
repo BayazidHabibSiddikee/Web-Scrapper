@@ -34,6 +34,8 @@ import logging
 from pathlib import Path
 from typing import Any, Callable, Dict
 
+from security_utils import assert_public_url, assert_safe_path
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("agent_tools")
 
@@ -52,7 +54,7 @@ def _err(msg: str) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 def t_scrape(args: Dict[str, Any]) -> Dict[str, Any]:
-    url = args["url"]
+    url = assert_public_url(args["url"])
     from master_pipeline import run_pipeline
     import asyncio
     try:
@@ -73,8 +75,9 @@ def t_scrape(args: Dict[str, Any]) -> Dict[str, Any]:
 
 def t_fetch(args: Dict[str, Any]) -> Dict[str, Any]:
     from scrapling_backend import scrape_scrapling
+    url = assert_public_url(args["url"])
     try:
-        r = scrape_scrapling(args["url"], mode=args.get("mode", "http"),
+        r = scrape_scrapling(url, mode=args.get("mode", "http"),
                              selectors=args.get("selectors"),
                              impersonate=args.get("impersonate", "chrome"))
     except Exception as exc:
@@ -88,9 +91,10 @@ def t_fetch(args: Dict[str, Any]) -> Dict[str, Any]:
 def t_grab_images(args: Dict[str, Any]) -> Dict[str, Any]:
     import subprocess, sys
     urls = args["urls"] if isinstance(args.get("urls"), list) else [args["url"]]
-    out_dir = args.get("out_dir", "output/images")
+    urls = [assert_public_url(url) for url in urls]
+    out_dir = assert_safe_path(args.get("out_dir", "output/images"), Path(__file__).resolve().parent / "output")
     try:
-        subprocess.run([sys.executable, "grab_images.py", *urls],
+        subprocess.run([sys.executable, "grab_images.py", *urls, "--out", out_dir],
                        check=True, timeout=args.get("timeout", 180))
     except Exception as exc:
         return _err(exc)
@@ -99,8 +103,9 @@ def t_grab_images(args: Dict[str, Any]) -> Dict[str, Any]:
 
 def t_extract_forms(args: Dict[str, Any]) -> Dict[str, Any]:
     from form_fill import extract_forms
+    url = assert_public_url(args["url"])
     try:
-        forms = extract_forms(args["url"], headless=args.get("headless", True))
+        forms = extract_forms(url, headless=args.get("headless", True))
     except Exception as exc:
         return _err(exc)
     return _ok(forms=[f.to_dict() for f in forms])
@@ -108,8 +113,9 @@ def t_extract_forms(args: Dict[str, Any]) -> Dict[str, Any]:
 
 def t_fill_form(args: Dict[str, Any]) -> Dict[str, Any]:
     from form_fill import fill_form
+    url = assert_public_url(args["url"])
     try:
-        r = fill_form(args["url"], args["values"], submit=args.get("submit", True),
+        r = fill_form(url, args["values"], submit=args.get("submit", True),
                       form_index=args.get("form_index", 0),
                       screenshot=args.get("screenshot"))
     except Exception as exc:
@@ -121,9 +127,10 @@ def t_fill_form(args: Dict[str, Any]) -> Dict[str, Any]:
 
 def t_solve_captcha(args: Dict[str, Any]) -> Dict[str, Any]:
     from captcha_flow import solve_captcha_on_page
+    url = assert_public_url(args["url"])
     try:
         r = solve_captcha_on_page(
-            url=args["url"], captcha_type=args.get("type", "auto"),
+            url=url, captcha_type=args.get("type", "auto"),
             site_key=args.get("site_key"), pre_fill=args.get("pre_fill"),
             submit_selector=args.get("submit_selector"),
             free_first=args.get("free_first", True),
@@ -158,7 +165,7 @@ def t_maps_leads(args: Dict[str, Any]) -> Dict[str, Any]:
         return _err(exc)
     except Exception as exc:
         return _err(exc)
-    out = args.get("out", f"output/maps-{int(__import__('time').time())}.json")
+    out = assert_safe_path(args.get("out", f"output/maps-{int(__import__('time').time())}.json"), Path(__file__).resolve().parent / "output")
     Path(out).parent.mkdir(parents=True, exist_ok=True)
     Path(out).write_text(json.dumps(results, indent=2, ensure_ascii=False))
     return _ok(count=len(results), saved=out, sample=results[:3])
@@ -170,12 +177,17 @@ def t_file_to_markdown(args: Dict[str, Any]) -> Dict[str, Any]:
     if sys_path not in sys.path:
         sys.path.insert(0, sys_path)
     from markitdown_convert import convert
+    source = args["source"]
+    if not str(source).startswith(("http://", "https://")):
+        source = assert_safe_path(str(source), Path(__file__).resolve().parent)
+    else:
+        source = assert_public_url(str(source))
     try:
-        md = convert(args["source"])
+        md = convert(source)
     except Exception as exc:
         return _err(exc)
     if args.get("output"):
-        Path(args["output"]).write_text(md, encoding="utf-8")
+        Path(assert_safe_path(args["output"], Path(__file__).resolve().parent / "output")).write_text(md, encoding="utf-8")
         return _ok(chars=len(md), saved=args["output"])
     return _ok(chars=len(md), markdown=md[: args.get("max_chars", 20000)])
 
@@ -186,19 +198,21 @@ def t_saas_extract(args: Dict[str, Any]) -> Dict[str, Any]:
     if p not in sys.path:
         sys.path.insert(0, p)
     from saas_extract import scrape_website
+    url = assert_public_url(args["url"])
     try:
-        d = scrape_website(args["url"], max_subpages=args.get("subpages", 3))
+        d = scrape_website(url, max_subpages=args.get("subpages", 3))
     except Exception as exc:
         return _err(exc)
     return _ok(**d)
 
 
 def t_rss_read(args: Dict[str, Any]) -> Dict[str, Any]:
+    url = assert_public_url(args["url"])
     try:
         import feedparser
     except ImportError:
         return _err("feedparser not installed")
-    d = feedparser.parse(args["url"])
+    d = feedparser.parse(url)
     items = [{"title": e.get("title"), "link": e.get("link"),
               "published": e.get("published"),
               "summary": (e.get("summary") or "")[:300]}
@@ -208,8 +222,9 @@ def t_rss_read(args: Dict[str, Any]) -> Dict[str, Any]:
 
 def t_auth_scrape(args: Dict[str, Any]) -> Dict[str, Any]:
     from cookies import auth_scrape
+    url = assert_public_url(args["url"])
     try:
-        r = auth_scrape(args["url"], browser=args.get("browser", "chrome"),
+        r = auth_scrape(url, browser=args.get("browser", "chrome"),
                         screenshot=args.get("screenshot"))
     except Exception as exc:
         return _err(exc)
@@ -252,13 +267,13 @@ def _parse_sitemap_loc(xml_text: str) -> list:
 def t_sitemap_crawl(args: Dict[str, Any]) -> Dict[str, Any]:
     import httpx
     from urllib.parse import urljoin
-    base = args["url"].rstrip("/")
+    base = assert_public_url(args["url"]).rstrip("/")
     urls = []
     headers = {"User-Agent": "Mozilla/5.0 (compatible; web-scraper-toolkit)"}
     # 1) robots.txt → declared sitemaps; 2) common paths as fallback
     candidates = []
     try:
-        with httpx.Client(follow_redirects=True, timeout=20, headers=headers) as c:
+        with httpx.Client(follow_redirects=False, timeout=20, headers=headers) as c:
             robots = c.get(urljoin(base + "/", "robots.txt"))
             if robots.status_code == 200:
                 candidates += [l.split(":", 1)[1].strip()
@@ -269,7 +284,7 @@ def t_sitemap_crawl(args: Dict[str, Any]) -> Dict[str, Any]:
     if not candidates:
         candidates = [urljoin(base + "/", p)
                       for p in ("sitemap.xml", "sitemap_index.xml", "wp-sitemap.xml")]
-    with httpx.Client(follow_redirects=True, timeout=20, headers=headers) as c:
+    with httpx.Client(follow_redirects=False, timeout=20, headers=headers) as c:
         for sm in candidates[:4]:
             try:
                 r = c.get(sm)

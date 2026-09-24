@@ -11,6 +11,11 @@ from typing import Any
 FORMATS = {"json", "md", "csv", "sqlite"}
 
 
+def _csv_safe(value: Any) -> str:
+    text = "" if value is None else str(value)
+    return "'" + text if text.startswith(("=", "+", "-", "@", "\t", "\r", "\n")) else text
+
+
 def export_result(result: Any, output: str, format_name: str) -> str:
     fmt = format_name.lower()
     if fmt not in FORMATS:
@@ -27,7 +32,7 @@ def export_result(result: Any, output: str, format_name: str) -> str:
         with path.open("w", newline="", encoding="utf-8") as stream:
             writer = csv.writer(stream)
             writer.writerow(["url", "title", "text", "backend", "error"])
-            writer.writerow([data.get("url"), data.get("title"), data.get("text"), data.get("backend"), data.get("error")])
+            writer.writerow([_csv_safe(data.get(key)) for key in ("url", "title", "text", "backend", "error")])
     else:
         with sqlite3.connect(path) as connection:
             connection.execute("CREATE TABLE IF NOT EXISTS pages (url TEXT PRIMARY KEY, title TEXT, text TEXT, backend TEXT, error TEXT)")

@@ -15,6 +15,8 @@ from urllib.parse import urlparse
 
 import httpx
 
+from security_utils import assert_public_url
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("grab_images")
 
@@ -64,7 +66,7 @@ async def download_images(urls: list, out_dir: Path, max_images: int,
     saved = []
 
     async with httpx.AsyncClient(
-        follow_redirects=True,
+        follow_redirects=False,
         timeout=20.0,
         headers={**HEADERS, "Referer": referer},
         http2=True,
@@ -83,7 +85,14 @@ async def download_images(urls: list, out_dir: Path, max_images: int,
 
             async with sem:
                 try:
+                    url = assert_public_url(url)
                     resp = await client.get(url)
+                    if resp.is_redirect:
+                        location = resp.headers.get("location")
+                        if not location:
+                            return
+                        url = assert_public_url(str(resp.url.join(location)))
+                        resp = await client.get(url)
                     if resp.status_code != 200:
                         return
                     data = resp.content

@@ -41,6 +41,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+from security_utils import assert_public_url
+
 _ROOT = Path(__file__).resolve().parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
@@ -398,6 +400,8 @@ async def _solve_async(
 def solve_captcha_on_page(url: str = None, page=None, **kwargs) -> CaptchaFlowResult:
     """Sync wrapper (loop-safe, same pattern as scraper.scrape)."""
     import asyncio, concurrent.futures
+    if url:
+        url = assert_public_url(url)
     coro = _solve_async(url=url, page=page, **kwargs)
     try:
         asyncio.get_running_loop()

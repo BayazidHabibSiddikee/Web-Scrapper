@@ -38,7 +38,7 @@ install: ## Install deps into venv
 	@source venv/bin/activate && pip install -r requirements.txt && playwright install chromium
 
 check: ## Compile-check all modules
-	$(PYTHON) -m py_compile agent_tools.py mcp_server.py captcha_flow.py cookies.py form_fill.py maps_scraper.py scrapling_backend.py medex_scraper.py scraper.py master_pipeline.py && echo OK
+	$(PYTHON) -m py_compile agent_tools.py mcp_server.py captcha_flow.py cookies.py form_fill.py maps_scraper.py scrapling_backend.py scraper.py master_pipeline.py toolkit.py web_scraper/*.py tests/*.py && echo OK
 
 docker-build: ## Build the production image
 	docker build -t web-scraper .

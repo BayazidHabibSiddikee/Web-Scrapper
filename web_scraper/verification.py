@@ -21,7 +21,7 @@ def verify_goal(goal: str, page: dict[str, Any]) -> tuple[bool, dict[str, Any]]:
     haystack = " ".join(str(page.get(key, "")) for key in ("url", "title", "text")).lower()
     labels = " ".join(str(a.get("label", "")) for a in page.get("actions", [])).lower()
     evidence = {term: (term in haystack or term in labels) for term in terms}
-    required = [term for term in terms if not any(char.isdigit() for char in term)]
+    required = list(dict.fromkeys(terms))
     satisfied = bool(required) and all(evidence[term] for term in required)
     return satisfied, {"terms": terms, "evidence": evidence, "source": "visible_page"}
 

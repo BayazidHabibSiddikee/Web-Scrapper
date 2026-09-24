@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .snapshot import READ_STATE, snapshot_fingerprint
+from security_utils import UnsafeURLError, assert_public_url
 
 
 class BrowserError(RuntimeError):
@@ -37,11 +38,27 @@ class BrowserController:
         except ImportError as exc:
             raise BrowserError("Browser control needs Playwright: pip install playwright") from exc
         self.playwright = sync_playwright().start()
-        self.browser = self.playwright.chromium.launch(headless=self.headless)
-        self.context = self.browser.new_context()
-        self.page = self.context.new_page()
-        self.page.goto(url, wait_until="domcontentloaded", timeout=30000)
-        self.page.wait_for_timeout(250)
+        try:
+            self.browser = self.playwright.chromium.launch(headless=self.headless)
+            self.context = self.browser.new_context()
+            self.context.route("**/*", self._route_request)
+            self.page = self.context.new_page()
+            assert_public_url(url)
+            self.page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            self.page.wait_for_timeout(250)
+        except Exception:
+            self.close()
+            raise
+
+    def _route_request(self, route) -> None:
+        try:
+            request_url = route.request.url
+            if request_url.startswith(("http://", "https://")):
+                assert_public_url(request_url)
+        except UnsafeURLError:
+            route.abort()
+            return
+        route.continue_()
 
     def observe(self) -> dict[str, Any]:
         if not self.page:

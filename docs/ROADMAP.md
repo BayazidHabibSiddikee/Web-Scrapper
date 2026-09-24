@@ -7,6 +7,9 @@
 - Structured scrape results
 - SSRF URL validation
 - Page fingerprints and stale-action rejection
+- Redirect-aware HTTP URL validation
+- Browser navigation/request SSRF blocking
+- Secret-safe browser observations
 - Independent goal verification for `DONE`
 - Stale decision re-observation without replaying mutations
 - JSON, Markdown, CSV, and SQLite result exporters

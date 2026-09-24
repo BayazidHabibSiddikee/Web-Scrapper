@@ -32,6 +32,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
+from security_utils import assert_public_url
+
 logger = logging.getLogger(__name__)
 
 
@@ -133,9 +135,10 @@ def scrape_scrapling(
     solve_cloudflare: stealth mode only — actively solve CF challenges (needs camoufox bin)
     """
     t0 = time.time()
+    url = assert_public_url(url)
     if mode == "http":
         from scrapling.fetchers import Fetcher
-        kwargs = {"impersonate": impersonate, "follow_redirects": True, "timeout": 30}
+        kwargs = {"impersonate": impersonate, "follow_redirects": False, "timeout": 30}
         if proxy:
             kwargs["proxy"] = proxy
         response = Fetcher.get(url, **kwargs)

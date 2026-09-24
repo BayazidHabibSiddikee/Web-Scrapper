@@ -23,12 +23,14 @@ def browser_task(url: str, goal: str, *, headless: bool = True, max_steps: int =
             decision = choose(goal, page, history)
             history.append({"operation": decision.operation, "target": decision.target, "confidence": decision.confidence})
             if decision.operation in {"DONE", "BLOCKED"}:
-                verified, evidence = verify_goal(goal, page) if decision.operation == "DONE" else (True, {"source": "model"})
-                if decision.operation == "DONE" and not verified:
+                if decision.operation == "DONE":
+                    verified, evidence = verify_goal(goal, page)
                     history[-1]["verification"] = evidence
-                    return BrowserTaskResult(False, "unverified", goal, history, page, "Model requested DONE but page evidence was insufficient")
-                history[-1]["verification"] = evidence
-                return BrowserTaskResult(True, decision.operation.lower(), goal, history, page)
+                    if not verified:
+                        return BrowserTaskResult(False, "unverified", goal, history, page, "Model requested DONE but page evidence was insufficient")
+                    return BrowserTaskResult(True, "done", goal, history, page)
+                history[-1]["verification"] = {"source": "model"}
+                return BrowserTaskResult(False, "blocked", goal, history, page, "Browser reported no safe progress")
             before_fingerprint = page.get("fingerprint")
             try:
                 expected_action = next((a for a in page.get("actions", []) if a.get("id") == decision.target), None)

@@ -9,4 +9,4 @@
 - CAPTCHA providers receive site keys and URLs; disclose this before using paid solving.
 - Do not use the browser agent for destructive actions without an explicit confirmation layer.
 
-The current SSRF guard is implemented in `security_utils.py`. The browser safety contract is documented in `docs/BROWSER_AGENT.md`.
+The unified scraper validates initial URLs and every HTTP redirect before use. Browser tasks also validate the initial navigation and reject HTTP(S) browser requests to private, loopback, link-local, reserved, or metadata destinations. Legacy tools that do not use the unified package still require an audit before being exposed to untrusted callers.

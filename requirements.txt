@@ -32,9 +32,9 @@ readability-lxml>=0.8.1,<0.10       # Mozilla readability port
 newspaper3k==0.2.8            # article + NLP (keywords, summary)
 
 # ── Screenshots / PDF ──────────────────────────────────────────────────────
-pillow==11.1.0               # image processing
-pdfkit==1.0.0                # HTML → PDF (requires wkhtmltopdf binary)
-weasyprint==62.3             # HTML → PDF (pure Python, no binary)
+pillow>=12.3.0           # image processing
+# pdfkit==1.0.0          # legacy optional HTML→PDF adapter; use WeasyPrint instead
+weasyprint>=70.0        # HTML→PDF (pure Python, no binary)
 
 # ── Screenshot CLIs ────────────────────────────────────────────────────────
 # shot-scraper      → pip install shot-scraper

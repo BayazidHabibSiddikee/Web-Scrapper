@@ -34,24 +34,35 @@ def scrape_web(
         url = assert_public_url(url)
         import httpx
 
-        response = httpx.get(
-            url,
-            follow_redirects=True,
-            timeout=timeout,
-            headers={"User-Agent": "web-scraper-toolkit/2.0"},
-        )
+        current_url = url
+        for _ in range(6):
+            response = httpx.get(
+                current_url,
+                follow_redirects=False,
+                timeout=timeout,
+                headers={"User-Agent": "web-scraper-toolkit/2.0"},
+            )
+            if response.is_redirect:
+                location = response.headers.get("location")
+                if not location:
+                    raise ValueError("Redirect response has no Location header")
+                current_url = assert_public_url(str(httpx.URL(current_url).join(location)))
+                continue
+            break
+        else:
+            raise ValueError("Too many redirects")
         response.raise_for_status()
         html = response.text
         backend = "httpx"
         if render_js and _should_render(html):
             try:
-                html = _playwright_html(str(response.url), int(timeout * 1000))
+                html = _playwright_html(current_url, int(timeout * 1000))
                 backend = "playwright-fallback"
             except Exception as exc:
                 response.headers["x-scraper-render-warning"] = str(exc)
-        title, text, links, metadata = _parse_html(html, str(response.url), selectors, max_chars)
+        title, text, links, metadata = _parse_html(html, current_url, selectors, max_chars)
         metadata.update({"status": response.status_code, "content_type": response.headers.get("content-type", "")})
-        return ScrapeResult(True, str(response.url), title, text, links, metadata, backend)
+        return ScrapeResult(True, current_url, title, text, links, metadata, backend)
     except Exception as exc:
         return ScrapeResult(False, url, error=str(exc))
 
@@ -74,12 +85,25 @@ def _should_render(html: str) -> bool:
     return len(html) < 1000 or any(token in lowered for token in ("__next_data__", "id=\"root\"", "id='root'", "enable javascript"))
 
 
+def _allow_browser_request(route) -> None:
+    from security_utils import UnsafeURLError, assert_public_url
+    request_url = route.request.url
+    if request_url.startswith(("http://", "https://")):
+        try:
+            assert_public_url(request_url)
+        except UnsafeURLError:
+            route.abort()
+            return
+    route.continue_()
+
+
 def _playwright_html(url: str, timeout_ms: int) -> str:
     from playwright.sync_api import sync_playwright
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
         try:
             page = browser.new_page()
+            page.route("**/*", _allow_browser_request)
             page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
             page.wait_for_timeout(750)
             return page.content()

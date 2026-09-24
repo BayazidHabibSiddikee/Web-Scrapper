@@ -75,3 +75,16 @@ def assert_public_url(url: str) -> str:
         if not _ip_is_public(ip):
             raise UnsafeURLError(f"Host {host!r} resolves to a non-public address: {ip}")
     return url
+
+
+def assert_safe_path(path: str, root: str) -> str:
+    """Resolve a local path and ensure it remains inside an allowed root."""
+    from pathlib import Path
+    resolved = Path(path).expanduser().resolve()
+    allowed = Path(root).expanduser().resolve()
+    if resolved != allowed and allowed not in resolved.parents:
+        raise UnsafeURLError("Path is outside the allowed output root")
+    return str(resolved)
+
+
+__all__ = ["UnsafeURLError", "assert_public_url", "assert_safe_path"]

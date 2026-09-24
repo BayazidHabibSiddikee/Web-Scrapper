@@ -16,11 +16,13 @@ READ_STATE = r"""() => {
     const id = cache.next++; cache.nodes.set(id,e); return id;
   };
   const visible = e => !e.closest('[aria-hidden="true"],[inert]') && e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true});
-  const label = e => (e.getAttribute('aria-label') || e.innerText || e.value || e.getAttribute('placeholder') || e.tagName).trim().slice(0,200);
+  const sensitive = e => ['password','file','hidden'].includes(e.type) || /pass(word)?|token|secret|api[-_ ]?key|otp|cvv|card[-_ ]?number/i.test([e.name,e.id,e.autocomplete,e.getAttribute('aria-label')].join(' '));
+  const modelValue = e => sensitive(e) ? null : (e.value ?? null);
+  const label = e => (e.getAttribute('aria-label') || e.innerText || (sensitive(e) ? '' : e.value) || e.getAttribute('placeholder') || e.tagName).trim().slice(0,200);
   const role = e => e.getAttribute('role') || e.tagName.toLowerCase();
   const guard = e => {
     const r=e.getBoundingClientRect();
-    return {label:label(e), role:role(e), value:e.value ?? null, checked:e.checked ?? null,
+    return {label:label(e), role:role(e), value:modelValue(e), checked:e.checked ?? null,
       readOnly:!!e.readOnly, disabled:!!e.disabled, expanded:e.getAttribute('aria-expanded'),
       rect:{x:r.x,y:r.y,w:r.width,h:r.height}};
   };

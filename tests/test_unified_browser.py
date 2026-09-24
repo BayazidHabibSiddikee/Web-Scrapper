@@ -6,6 +6,7 @@ from web_scraper.browser import BrowserError
 from web_scraper.exporters import export_result
 from web_scraper.policy import BrowserDecision, _validate
 from web_scraper.verification import verify_goal
+from security_utils import UnsafeURLError, assert_safe_path
 
 
 def test_rejects_unknown_operation():
@@ -74,3 +75,37 @@ def test_export_json(tmp_path):
     output = tmp_path / "result.json"
     export_result(ScrapeResult(True, "https://example.test", "Example", "Body", [], {}, "httpx"), str(output), "json")
     assert "Example" in output.read_text()
+
+
+
+def test_blocked_is_not_success(monkeypatch):
+    from web_scraper import api
+    from web_scraper.policy import BrowserDecision
+    controller = type("Controller", (), {
+        "start": lambda self, url: None,
+        "observe": lambda self: {"fingerprint": "same", "actions": [], "text": "Home", "url": "https://example.test/"},
+        "act": lambda self, *args: None,
+        "close": lambda self: None,
+    })()
+    monkeypatch.setattr(api, "BrowserController", lambda **kwargs: controller)
+    monkeypatch.setattr(api, "choose", lambda *args: BrowserDecision("BLOCKED"))
+    result = api.browser_task("https://example.test/", "Do something")
+    assert not result.ok
+    assert result.status == "blocked"
+
+
+def test_numeric_completion_requires_identifier():
+    verified, _ = verify_goal("Find order number 12345", {"url": "https://example.test/", "title": "Order", "text": "order number"})
+    assert not verified
+
+
+def test_safe_path_rejects_escape(tmp_path):
+    with pytest.raises(UnsafeURLError):
+        assert_safe_path(str(tmp_path / ".." / "outside.txt"), str(tmp_path / "allowed"))
+
+
+def test_csv_export_neutralizes_formula(tmp_path):
+    from web_scraper.scraper import ScrapeResult
+    output = tmp_path / "result.csv"
+    export_result(ScrapeResult(True, "=CMD()", "=TITLE()", "+1+1", [], {}, "httpx"), str(output), "csv")
+    assert "'=CMD()" in output.read_text()

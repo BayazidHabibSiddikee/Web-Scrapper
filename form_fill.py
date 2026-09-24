@@ -34,6 +34,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from security_utils import assert_public_url
+
 log = logging.getLogger(__name__)
 
 # JS run inside the page to enumerate every form + its fields.
@@ -176,6 +178,7 @@ class FillResult:
 
 async def _page_factory(url: str, headless: bool, use_camoufox: bool):
     """Open the target in Camoufox (default) or plain Playwright Chromium."""
+    url = assert_public_url(url)
     if use_camoufox:
         try:
             from camoufox.async_api import AsyncCamoufox
