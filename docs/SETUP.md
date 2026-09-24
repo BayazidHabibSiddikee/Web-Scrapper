@@ -41,7 +41,20 @@ Run the read-only Linux network baseline:
 bash scripts/network_doctor.sh
 ```
 
-This reports interfaces, routes, DNS configuration, proxy variables, and public DNS resolution. It does not change IP, DNS, MAC, firewall, or VPN state. Any network mutation should be performed manually with a rollback plan and explicit root privileges; those changes are not part of the scraper runtime.
+This reports interfaces, routes, DNS configuration, proxy variables, and public DNS resolution. It does not change IP, DNS, MAC, firewall, or VPN state.
+
+The optional mutation-capable tool is explicit and dry-run by default:
+
+```bash
+bash scripts/network_control.sh list
+bash scripts/network_control.sh dns wlan0 1.1.1.1 1.0.0.1 --dry-run
+sudo bash scripts/network_control.sh dns wlan0 1.1.1.1 1.0.0.1 --apply
+sudo bash scripts/network_control.sh mac-random wlan0 --apply
+sudo bash scripts/network_control.sh mac-restore wlan0 aa:bb:cc:dd:ee:ff --apply
+sudo bash scripts/network_control.sh dhcp wlan0 --apply
+```
+
+Supported mutation categories are DNS set/reset, MAC randomize/restore, DHCP renewal, and NetworkManager static IPv4 configuration. Every mutation requires `--apply`, root privileges, and an interactive `APPLY` confirmation. Use a local console or an out-of-band recovery path before changing the active interface.
 
 ```bash
 python toolkit.py scrape https://example.com
