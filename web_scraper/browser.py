@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from hashlib import sha256
-from json import dumps
 from typing import Any
+
+from .snapshot import READ_STATE, snapshot_fingerprint
 
 
 class BrowserError(RuntimeError):
@@ -47,38 +47,17 @@ class BrowserController:
         if not self.page:
             raise BrowserError("Browser is not started")
         try:
-            state = self.page.evaluate(
-                """() => {
-                  if (!document.body) return null;
-                  const cache = window.__webScraper ||= {nodes:new Map(), next:1};
-                  for (const [id,e] of cache.nodes) if (!e.isConnected) cache.nodes.delete(id);
-                  const identity = e => {
-                    for (const [id,node] of cache.nodes) if (node === e) return id;
-                    const id = cache.next++; cache.nodes.set(id,e); return id;
-                  };
-                  const visible = e => !e.closest('[aria-hidden="true"],[inert]') && e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true});
-                  const label = e => (e.getAttribute('aria-label') || e.innerText || e.value || e.getAttribute('placeholder') || e.tagName).trim().slice(0,200);
-                  const selector = 'a[href],button,input,textarea,select,[role=button],[role=link],[role=combobox],[role=option]';
-                  const actions = [...document.querySelectorAll(selector)].map((e,i) => {
-                    const r=e.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2, node=identity(e);
-                    const options = e.tagName === 'SELECT' ? [...e.options].map(o => ({value:o.value,label:o.label})).filter(o=>!o.disabled) : [];
-                    return {id:'e'+node, node, selectorIndex:i, kind:e.tagName==='SELECT'?'select':(e.matches('input,textarea,[contenteditable=true]')?'fill':'click'), label:label(e), role:e.getAttribute('role')||e.tagName.toLowerCase(), visible:!!(r.width&&r.height&&x>=0&&y>=0&&x<innerWidth&&y<innerHeight), disabled:!!e.disabled, readOnly:!!e.readOnly, options};
-                  }).filter(a=>a.visible&&!a.disabled);
-                  const text=document.body.innerText.slice(0,12000);
-                  const semantics=actions.map(({selectorIndex,visible,disabled,readOnly,...a})=>a);
-                  return {url:location.href,title:document.title,text,actions,scroll:{y:scrollY,height:document.documentElement.scrollHeight},semantics};
-                }"""
-            )
+            state = self.page.evaluate(READ_STATE)
             if state is None:
                 raise BrowserError("Document is not ready")
-            state["fingerprint"] = sha256(dumps({"url":state["url"], "title":state["title"], "text":state["text"], "semantics":state["semantics"]}, sort_keys=True, default=str).encode()).hexdigest()
+            state["fingerprint"] = snapshot_fingerprint(state)
             return state
         except BrowserError:
             raise
         except Exception as exc:
             raise BrowserError("Could not observe browser page") from exc
 
-    def act(self, decision, expected_fingerprint: str | None = None) -> None:
+    def act(self, decision, expected_fingerprint: str | None = None, expected_action: dict[str, Any] | None = None) -> None:
         if not self.page:
             raise BrowserError("Browser is not started")
         if expected_fingerprint and self.observe().get("fingerprint") != expected_fingerprint:
@@ -98,6 +77,12 @@ class BrowserController:
             action = next((a for a in self.observe().get("actions", []) if a["id"] == decision.target), None)
             if not action:
                 raise BrowserError("Selected browser target is no longer available")
+            if expected_action:
+                expected_guard = expected_action.get("guard", {})
+                actual_guard = action.get("guard", {})
+                for key in ("label", "role", "value", "checked", "readOnly", "disabled", "expanded"):
+                    if expected_guard.get(key) != actual_guard.get(key):
+                        raise BrowserError("Target semantics changed before interaction")
             guard = self.page.evaluate(
                 """nodeId => {
                   const e=window.__webScraper?.nodes.get(Number(nodeId));

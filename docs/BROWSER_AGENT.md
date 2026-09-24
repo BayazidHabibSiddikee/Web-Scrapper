@@ -19,10 +19,21 @@ The LLM returns a JSON decision containing an operation, an observed target ID w
 
 Every observation includes a fingerprint of the page state and visible action set. Immediately before execution, the browser is observed again. If the fingerprint changed, the action is rejected and the page must be observed again. Targets are also resolved through stable page-scoped DOM node IDs rather than model-generated selectors or positional model coordinates.
 
-The executor does not accept model-generated selectors, JavaScript, shell commands, or coordinates. It only resolves IDs observed in the current snapshot.
+## Snapshot contract
+
+The observer returns an atomic snapshot containing:
+
+- `actions`: observed, currently visible controls with stable page-scoped node IDs
+- `guards`: per-control semantic state used to detect replacement or state changes
+- `semantics`: the model-facing meaning of the controls
+- `marker`: a page-state marker for freshness diagnostics
+- `fingerprint`: a deterministic semantic fingerprint
+
+The executor rechecks the fingerprint, target semantics, geometry, and hit-testing immediately before mutation.
 
 `DONE` is independently checked against visible page evidence before success is returned. A model-only completion claim can produce an `unverified` result.
-## Current limits
+The executor does not accept model-generated selectors, JavaScript, shell commands, or coordinates. It only resolves IDs observed in the current snapshot.
+
 
 The current implementation does not yet provide:
 

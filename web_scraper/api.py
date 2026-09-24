@@ -31,9 +31,10 @@ def browser_task(url: str, goal: str, *, headless: bool = True, max_steps: int =
                 return BrowserTaskResult(True, decision.operation.lower(), goal, history, page)
             before_fingerprint = page.get("fingerprint")
             try:
-                controller.act(decision, before_fingerprint)
+                expected_action = next((a for a in page.get("actions", []) if a.get("id") == decision.target), None)
+                controller.act(decision, before_fingerprint, expected_action)
             except BrowserError as exc:
-                if "Page changed" not in str(exc) and "safe to interact" not in str(exc):
+                if not any(marker in str(exc) for marker in ("Page changed", "safe to interact", "semantics changed")):
                     raise
                 history[-1]["status"] = "reobserved"
                 history[-1]["error"] = str(exc)

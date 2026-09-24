@@ -49,6 +49,15 @@ def test_should_render_is_opt_in_for_http_only_mode():
     assert result.backend == "httpx"
 
 
+
+
+def test_snapshot_fingerprint_is_deterministic_and_semantic():
+    from web_scraper.snapshot import snapshot_fingerprint
+    state = {"url": "https://example.test/", "title": "Example", "text": "Body", "semantics": [{"id": "e1", "label": "Open"}]}
+    assert snapshot_fingerprint(state) == snapshot_fingerprint(dict(state))
+    changed = dict(state, text="Changed")
+    assert snapshot_fingerprint(state) != snapshot_fingerprint(changed)
+
 def test_goal_verification_requires_visible_evidence():
     verified, evidence = verify_goal("Open the contact page", {"url": "https://example.test/contact", "title": "Contact", "text": "Contact us"})
     assert verified
