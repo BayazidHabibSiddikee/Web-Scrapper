@@ -170,7 +170,7 @@ async def _open_scrapling(url: str, headless: bool, timeout_ms: int):
         meta["first_status"] = getattr(resp, "status", None)
         meta["challenge_cleared"] = (meta["first_status"] == 200
                                      and not _looks_challenged(getattr(resp, "body", b"")))
-        final = getattr(resp, "url", None) or url
+        final = assert_public_url(getattr(resp, "url", None) or url)
         page = await session.context.new_page()
         await page.goto(final, wait_until="domcontentloaded", timeout=timeout_ms / 1000)
         await page.wait_for_timeout(1200)

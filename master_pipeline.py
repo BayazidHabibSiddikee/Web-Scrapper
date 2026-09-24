@@ -34,6 +34,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
+from security_utils import assert_public_url
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -188,6 +190,7 @@ async def run_pipeline(
     If auto_backend=True and stealth_profile="auto", runs WAF detection first
     and chooses backend automatically.
     """
+    url = assert_public_url(url)
     results = {
         "url": url,
         "timestamp": datetime.now(timezone.utc).isoformat(),

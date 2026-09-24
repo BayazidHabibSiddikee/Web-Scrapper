@@ -35,7 +35,13 @@ export BROWSER_LLM_BASE_URL="https://api.deepseek.com/v1"
 export BROWSER_LLM_MODEL="deepseek-chat"
 ```
 
-## Verify
+Run the read-only Linux network baseline:
+
+```bash
+bash scripts/network_doctor.sh
+```
+
+This reports interfaces, routes, DNS configuration, proxy variables, and public DNS resolution. It does not change IP, DNS, MAC, firewall, or VPN state. Any network mutation should be performed manually with a rollback plan and explicit root privileges; those changes are not part of the scraper runtime.
 
 ```bash
 python toolkit.py scrape https://example.com
