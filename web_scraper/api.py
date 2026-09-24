@@ -23,7 +23,13 @@ def browser_task(url: str, goal: str, *, headless: bool = True, max_steps: int =
             history.append({"operation": decision.operation, "target": decision.target, "confidence": decision.confidence})
             if decision.operation in {"DONE", "BLOCKED"}:
                 return BrowserTaskResult(True, decision.operation.lower(), goal, history, page)
-            controller.act(decision, page.get("fingerprint"))
+            before_fingerprint = page.get("fingerprint")
+            controller.act(decision, before_fingerprint)
+            after_page = controller.observe()
+            changed = after_page.get("fingerprint") != before_fingerprint
+            history[-1]["page_changed"] = changed
+            if len(history) >= 3 and not any(h.get("page_changed", True) for h in history[-3:]) and all(h["operation"] != "WAIT" for h in history[-3:]):
+                return BrowserTaskResult(False, "blocked", goal, history, after_page, "Browser made no observable progress")
         return BrowserTaskResult(False, "blocked", goal, history, controller.observe(), "Browser step budget exhausted")
     except (BrowserError, Exception) as exc:
         return BrowserTaskResult(False, "error", goal, history, error=str(exc))

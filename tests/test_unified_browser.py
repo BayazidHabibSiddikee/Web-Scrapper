@@ -21,6 +21,11 @@ def test_rejects_text_operation_without_value():
         _validate({"operation": "TYPE_TEXT", "target": "e1", "confidence": 1}, {"e1": {}})
 
 
+def test_select_requires_option_text():
+    with pytest.raises(BrowserError, match="SELECT"):
+        _validate({"operation": "SELECT", "target": "e1", "confidence": 1}, {"e1": {"kind": "select"}})
+
+
 def test_accepts_valid_decision():
     result = _validate({"operation": "CLICK", "target": "e1", "confidence": 0.8}, {"e1": {}})
     assert isinstance(result, BrowserDecision)

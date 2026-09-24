@@ -17,7 +17,7 @@ The LLM returns a JSON decision containing an operation, an observed target ID w
 
 ## Safety behavior
 
-Every observation includes a fingerprint of the page state and visible action set. Immediately before execution, the browser is observed again. If the fingerprint changed, the action is rejected and the page must be observed again.
+Every observation includes a fingerprint of the page state and visible action set. Immediately before execution, the browser is observed again. If the fingerprint changed, the action is rejected and the page must be observed again. Targets are also resolved through stable page-scoped DOM node IDs rather than model-generated selectors or positional model coordinates.
 
 The executor does not accept model-generated selectors, JavaScript, shell commands, or coordinates. It only resolves IDs observed in the current snapshot.
 

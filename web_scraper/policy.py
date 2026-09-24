@@ -42,8 +42,8 @@ def _validate(value: Any, targets: dict[str, dict[str, Any]]) -> BrowserDecision
             raise BrowserError("Browser model selected an unknown target")
     elif target is not None:
         raise BrowserError(f"{operation} must not have a target")
-    if operation == "TYPE_TEXT" and (not isinstance(text, str) or not text.strip() or len(text) > 2000):
-        raise BrowserError("TYPE_TEXT requires a non-empty text value of at most 2000 characters")
+    if operation in {"TYPE_TEXT", "SELECT"} and (not isinstance(text, str) or not text.strip() or len(text) > 2000):
+        raise BrowserError(f"{operation} requires a non-empty text value of at most 2000 characters")
     if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not 0 <= confidence <= 1:
         raise BrowserError("Browser model confidence must be between 0 and 1")
     return BrowserDecision(operation, target, text, float(confidence), str(value.get("reason", ""))[:500])
@@ -65,7 +65,7 @@ def choose(goal: str, page: dict[str, Any], history: list[dict[str, Any]]) -> Br
         "schema": {
             "operation": sorted(OPERATIONS),
             "target": "an action id for CLICK/TYPE_TEXT/SELECT",
-            "text": "required only for TYPE_TEXT",
+            "text": "required for TYPE_TEXT and SELECT",
             "confidence": "number from 0 to 1",
         },
         "rules": [
