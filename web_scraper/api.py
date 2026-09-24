@@ -23,7 +23,7 @@ def browser_task(url: str, goal: str, *, headless: bool = True, max_steps: int =
             history.append({"operation": decision.operation, "target": decision.target, "confidence": decision.confidence})
             if decision.operation in {"DONE", "BLOCKED"}:
                 return BrowserTaskResult(True, decision.operation.lower(), goal, history, page)
-            controller.act(decision)
+            controller.act(decision, page.get("fingerprint"))
         return BrowserTaskResult(False, "blocked", goal, history, controller.observe(), "Browser step budget exhausted")
     except (BrowserError, Exception) as exc:
         return BrowserTaskResult(False, "error", goal, history, error=str(exc))

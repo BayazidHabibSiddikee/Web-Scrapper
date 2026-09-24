@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import dataclass
 from typing import Any
 
 from .browser import BrowserError
+from .config import LLMConfig
 
 
 @dataclass(frozen=True)
@@ -17,18 +17,15 @@ class BrowserDecision:
     text: str | None = None
     confidence: float = 0.0
     reason: str = ""
+    page_fingerprint: str | None = None
 
 
 OPERATIONS = {"CLICK", "TYPE_TEXT", "SELECT", "SCROLL_UP", "SCROLL_DOWN", "WAIT", "DONE", "BLOCKED"}
 TARGET_OPERATIONS = {"CLICK", "TYPE_TEXT", "SELECT"}
 
 
-def _provider() -> tuple[str, str, str]:
-    return (
-        os.getenv("BROWSER_LLM_BASE_URL", "https://api.openai.com/v1").rstrip("/"),
-        os.getenv("BROWSER_LLM_MODEL", "gpt-4.1-mini"),
-        os.getenv("BROWSER_LLM_API_KEY", os.getenv("OPENAI_API_KEY", "")),
-    )
+def _provider() -> LLMConfig:
+    return LLMConfig.from_env()
 
 
 def _validate(value: Any, targets: dict[str, dict[str, Any]]) -> BrowserDecision:
@@ -55,7 +52,8 @@ def _validate(value: Any, targets: dict[str, dict[str, Any]]) -> BrowserDecision
 def choose(goal: str, page: dict[str, Any], history: list[dict[str, Any]]) -> BrowserDecision:
     import httpx
 
-    base, model, key = _provider()
+    config = _provider()
+    base, model, key = config.base_url, config.model, config.api_key
     if not key:
         raise BrowserError("Browser control needs BROWSER_LLM_API_KEY or OPENAI_API_KEY")
     targets = {str(a["id"]): a for a in page.get("actions", []) if a.get("kind") in {"click", "fill", "select", "scroll"}}
@@ -89,7 +87,7 @@ def choose(goal: str, page: dict[str, Any], history: list[dict[str, Any]]) -> Br
                 {"role": "user", "content": json.dumps(prompt)},
             ],
         },
-        timeout=30,
+        timeout=config.timeout,
     )
     if response.is_error:
         raise BrowserError(f"Browser LLM returned HTTP {response.status_code}")

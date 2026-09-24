@@ -1,6 +1,14 @@
 # 🕷️ Web Scraper Toolkit
 
-## Unified AI browser and scraper
+## Documentation
+
+- [Architecture](docs/ARCHITECTURE.md)
+- [Setup](docs/SETUP.md)
+- [API reference](docs/API.md)
+- [Browser agent](docs/BROWSER_AGENT.md)
+- [Security](docs/SECURITY.md)
+- [Roadmap](docs/ROADMAP.md)
+
 
 The toolkit now exposes two high-level workflows from one package:
 

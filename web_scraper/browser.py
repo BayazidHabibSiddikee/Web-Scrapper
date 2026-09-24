@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from hashlib import sha256
+from json import dumps
 from typing import Any
 
 
@@ -45,7 +47,7 @@ class BrowserController:
         if not self.page:
             raise BrowserError("Browser is not started")
         try:
-            return self.page.evaluate(
+            state = self.page.evaluate(
                 """() => ({
                   url: location.href, title: document.title,
                   text: document.body ? document.body.innerText.slice(0, 12000) : '',
@@ -57,12 +59,16 @@ class BrowserController:
                   scroll:{y:scrollY,height:document.documentElement.scrollHeight}
                 })"""
             )
+            state["fingerprint"] = sha256(dumps(state, sort_keys=True, default=str).encode()).hexdigest()
+            return state
         except Exception as exc:
             raise BrowserError("Could not observe browser page") from exc
 
-    def act(self, decision) -> None:
+    def act(self, decision, expected_fingerprint: str | None = None) -> None:
         if not self.page:
             raise BrowserError("Browser is not started")
+        if expected_fingerprint and self.observe().get("fingerprint") != expected_fingerprint:
+            raise BrowserError("Page changed before browser action; observe again")
         op = decision.operation
         if op == "WAIT":
             self.page.wait_for_timeout(500)
