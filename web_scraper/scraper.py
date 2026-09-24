@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urljoin
 
 from security_utils import assert_public_url
 
@@ -24,10 +24,21 @@ class ScrapeResult:
 def scrape_web(url: str, *, selectors: dict[str, str] | None = None, max_chars: int = 20000, screenshot: bool = False) -> ScrapeResult:
     try:
         url = assert_public_url(url)
-        from master_pipeline import run_pipeline
-        result = asyncio.run(run_pipeline(url=url, screenshot=screenshot, export=False))
-        step = result.get("steps", {}).get("scrape", {})
-        return ScrapeResult(True, url, step.get("title"), step.get("text", "")[:max_chars], [], step.get("metadata", {}), result.get("backend"))
+        import httpx
+        from bs4 import BeautifulSoup
+
+        response = httpx.get(url, follow_redirects=True, timeout=30, headers={"User-Agent": "web-scraper-toolkit/2.0"})
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, "html.parser")
+        title = soup.title.get_text(" ", strip=True) if soup.title else None
+        text = " ".join(soup.get_text(" ", strip=True).split())[:max_chars]
+        links = [urljoin(str(response.url), a["href"]) for a in soup.select("a[href]") if a.get("href")]
+        metadata: dict[str, Any] = {"status": response.status_code, "content_type": response.headers.get("content-type", "")}
+        if selectors:
+            from parsel import Selector
+            selected = Selector(text=response.text)
+            metadata["selected"] = {name: selected.css(selector).getall() for name, selector in selectors.items()}
+        return ScrapeResult(True, str(response.url), title, text, links[:2000], metadata, "httpx")
     except Exception as exc:
         return ScrapeResult(False, url, error=str(exc))
 
