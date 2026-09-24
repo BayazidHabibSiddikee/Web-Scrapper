@@ -39,7 +39,32 @@ environment. TypeSafe is not required.
 python master_pipeline.py https://example.com
 ```
 
-## 📸 Real output
+## 🌐 Optional Linux network controls
+
+The toolkit includes a read-only network baseline and an explicit opt-in network-control utility.
+
+```bash
+bash scripts/network_doctor.sh
+bash scripts/network_control.sh list
+```
+
+Preview a DNS change without touching the system:
+
+```bash
+bash scripts/network_control.sh dns wlan0 1.1.1.1 1.0.0.1 --dry-run
+```
+
+Apply a change only when you have a local console or recovery path:
+
+```bash
+sudo bash scripts/network_control.sh dns wlan0 1.1.1.1 1.0.0.1 --apply
+sudo bash scripts/network_control.sh mac-random wlan0 --apply
+sudo bash scripts/network_control.sh mac-restore wlan0 aa:bb:cc:dd:ee:ff --apply
+sudo bash scripts/network_control.sh dhcp wlan0 --apply
+```
+
+The utility also supports NetworkManager static IPv4 configuration. Every mutation requires root privileges, `--apply`, and an interactive `APPLY` confirmation. The older `change_network.sh` is a hardcoded legacy script that immediately changes the interface, MAC, IP, and default route; use `network_control.sh` instead.
+
 
 All screenshots below were captured by this toolkit — full-page stealth renders through Camoufox, no manual touch-ups.
 
@@ -85,7 +110,7 @@ A Cloudflare-aware scrape of a minimal, JS-light site:
 
 | Category | Tools | Path |
 |----------|-------|------|
-| **Core scraper** | Camoufox + Playwright (download + screenshot + extract) | `scraper.py` |
+| **Core scraper** | Camoufox + Playwright (download + screenshot + extract) | `scraper.py` (legacy core; use `web_scraper.scrape_web` for the unified API) |
 | **Image grabber** | Page screenshot + bulk image download | `grab_images.py` |
 | **Master pipeline** | WAF-detect → auto-backend → scrape → extract → export | `master_pipeline.py` |
 | **Scrapling backend** | curl_cffi TLS spoof / DynamicFetcher / StealthyFetcher (+ auto recovery) | `scrapling_backend.py`, `master_pipeline.py --scrapling` |
@@ -93,7 +118,7 @@ A Cloudflare-aware scrape of a minimal, JS-light site:
 | **SaaS site extractor** | Homepage + marketing subpages → structured content | `examples/content_extract/saas_extract.py` |
 | **File → Markdown** | PDF/DOCX/XLSX/PPTX/images/audio/HTML → clean Markdown | `examples/content_extract/markitdown_convert.py` |
 | **SSRF guards** | Private/metadata-IP rejection for untrusted URLs | `security_utils.py` |
-| **MedEx pharma scraper** | Domain-specialist merge from ~/Downloads/scraper: 25k-brand Bangladesh drug DB (indications/dosage/৳prices), async HTTP/2 + backoff + stealth escalation + resume | `medex_scraper.py` |
+| **MedEx pharma scraper** | Separate domain-specialist project/experiment; not part of the unified browser API | Local MedEx files and another project |
 | **Form engine** | Extract form schema + auto-fill + submit (text/select/radio/checkbox) | `form_fill.py` |
 | **CAPTCHA live flow** | Detect widget → solve → inject token → submit (Playwright/Camoufox) | `captcha_flow.py`, `examples/captcha_solver/` |
 | **Cookie auth** | Least-privilege cookie extraction from local browsers → `auth_scrape` | `cookies.py` |
