@@ -1,0 +1,110 @@
+"""Constrained Playwright browser executor."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any
+
+
+class BrowserError(RuntimeError):
+    """A browser task could not be completed safely."""
+
+
+@dataclass(frozen=True)
+class BrowserTaskResult:
+    ok: bool
+    status: str
+    goal: str
+    steps: list[dict[str, Any]]
+    page: dict[str, Any] | None = None
+    error: str | None = None
+
+
+class BrowserController:
+    def __init__(self, headless: bool = True, max_steps: int = 30):
+        self.headless = headless
+        self.max_steps = max_steps
+        self.playwright = None
+        self.browser = None
+        self.context = None
+        self.page = None
+
+    def start(self, url: str) -> None:
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError as exc:
+            raise BrowserError("Browser control needs Playwright: pip install playwright") from exc
+        self.playwright = sync_playwright().start()
+        self.browser = self.playwright.chromium.launch(headless=self.headless)
+        self.context = self.browser.new_context()
+        self.page = self.context.new_page()
+        self.page.goto(url, wait_until="domcontentloaded", timeout=30000)
+        self.page.wait_for_timeout(250)
+
+    def observe(self) -> dict[str, Any]:
+        if not self.page:
+            raise BrowserError("Browser is not started")
+        try:
+            return self.page.evaluate(
+                """() => ({
+                  url: location.href, title: document.title,
+                  text: document.body ? document.body.innerText.slice(0, 12000) : '',
+                  actions: [...document.querySelectorAll('a[href],button,input,textarea,select,[role=button],[role=link],[role=combobox],[role=option]')].slice(0, 250).map((e, i) => {
+                    const r=e.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2;
+                    const label=(e.getAttribute('aria-label')||e.innerText||e.value||e.getAttribute('placeholder')||e.tagName).trim().slice(0,200);
+                    return {id:'e'+(i+1), selectorIndex:i, kind:e.tagName==='TEXTAREA'||e.tagName==='SELECT'?'fill':'click', label, role:e.getAttribute('role')||e.tagName.toLowerCase(), visible:!!(r.width&&r.height&&x>=0&&y>=0&&x<innerWidth&&y<innerHeight), disabled:!!e.disabled};
+                  }).filter(a=>a.visible&&!a.disabled),
+                  scroll:{y:scrollY,height:document.documentElement.scrollHeight}
+                })"""
+            )
+        except Exception as exc:
+            raise BrowserError("Could not observe browser page") from exc
+
+    def act(self, decision) -> None:
+        if not self.page:
+            raise BrowserError("Browser is not started")
+        op = decision.operation
+        if op == "WAIT":
+            self.page.wait_for_timeout(500)
+        elif op == "SCROLL_DOWN":
+            self.page.mouse.wheel(0, 560)
+        elif op == "SCROLL_UP":
+            self.page.mouse.wheel(0, -560)
+        elif op == "DONE":
+            return
+        elif op == "BLOCKED":
+            return
+        else:
+            action = next((a for a in self.observe().get("actions", []) if a["id"] == decision.target), None)
+            if not action:
+                raise BrowserError("Selected browser target is no longer available")
+            locator = self.page.locator("a[href],button,input,textarea,select,[role=button],[role=link],[role=combobox],[role=option]").nth(action.get("selectorIndex", int(decision.target[1:]) - 1))
+            if op == "TYPE_TEXT":
+                locator.fill(decision.text)
+            elif op == "SELECT":
+                locator.select_option(label=action.get("label"))
+            else:
+                locator.click(timeout=10000)
+        self.page.wait_for_timeout(350)
+
+    def close(self) -> None:
+        for obj in (self.context, self.browser, self.playwright):
+            try:
+                if obj:
+                    obj.stop() if obj is self.playwright else obj.close()
+            except Exception:
+                pass
+        self.page = self.context = self.browser = self.playwright = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self.close()
+
+
+def _noop() -> None:
+    """Keep module importable when Playwright is not installed."""
+
+
+__all__ = ["BrowserError", "BrowserController", "BrowserTaskResult", "_noop"]

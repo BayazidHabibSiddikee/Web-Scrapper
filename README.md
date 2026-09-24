@@ -1,5 +1,28 @@
 # 🕷️ Web Scraper Toolkit
 
+## Unified AI browser and scraper
+
+The toolkit now exposes two high-level workflows from one package:
+
+```python
+from web_scraper import scrape_web, browser_task
+
+scrape_web("https://example.com")
+browser_task("https://example.com", "Find the contact page and open it")
+```
+
+CLI:
+
+```bash
+python toolkit.py scrape https://example.com
+python toolkit.py browser https://example.com "Open the contact page"
+```
+
+Browser control uses any OpenAI-compatible chat-completions provider. Configure
+`BROWSER_LLM_API_KEY`, `BROWSER_LLM_BASE_URL`, and `BROWSER_LLM_MODEL` in the
+environment. TypeSafe is not required.
+
+
 > A production-grade Python scraping arsenal — stealth browsing, WAF detection, image grabbing, distributed crawling, and more. Built to handle the modern anti-bot web.
 
 **One command, full page:** WAF detection picks the right stealth backend automatically, downloads the page, takes a full-page screenshot, extracts clean article text, and exports to 5 formats.
