@@ -21,26 +21,71 @@ class ScrapeResult:
     error: str | None = None
 
 
-def scrape_web(url: str, *, selectors: dict[str, str] | None = None, max_chars: int = 20000, screenshot: bool = False) -> ScrapeResult:
+def scrape_web(
+    url: str,
+    *,
+    selectors: dict[str, str] | None = None,
+    max_chars: int = 20000,
+    screenshot: bool = False,
+    render_js: bool = True,
+    timeout: float = 30.0,
+) -> ScrapeResult:
     try:
         url = assert_public_url(url)
         import httpx
-        from bs4 import BeautifulSoup
 
-        response = httpx.get(url, follow_redirects=True, timeout=30, headers={"User-Agent": "web-scraper-toolkit/2.0"})
+        response = httpx.get(
+            url,
+            follow_redirects=True,
+            timeout=timeout,
+            headers={"User-Agent": "web-scraper-toolkit/2.0"},
+        )
         response.raise_for_status()
-        soup = BeautifulSoup(response.text, "html.parser")
-        title = soup.title.get_text(" ", strip=True) if soup.title else None
-        text = " ".join(soup.get_text(" ", strip=True).split())[:max_chars]
-        links = [urljoin(str(response.url), a["href"]) for a in soup.select("a[href]") if a.get("href")]
-        metadata: dict[str, Any] = {"status": response.status_code, "content_type": response.headers.get("content-type", "")}
-        if selectors:
-            from parsel import Selector
-            selected = Selector(text=response.text)
-            metadata["selected"] = {name: selected.css(selector).getall() for name, selector in selectors.items()}
-        return ScrapeResult(True, str(response.url), title, text, links[:2000], metadata, "httpx")
+        html = response.text
+        backend = "httpx"
+        if render_js and _should_render(html):
+            try:
+                html = _playwright_html(str(response.url), int(timeout * 1000))
+                backend = "playwright-fallback"
+            except Exception as exc:
+                response.headers["x-scraper-render-warning"] = str(exc)
+        title, text, links, metadata = _parse_html(html, str(response.url), selectors, max_chars)
+        metadata.update({"status": response.status_code, "content_type": response.headers.get("content-type", "")})
+        return ScrapeResult(True, str(response.url), title, text, links, metadata, backend)
     except Exception as exc:
         return ScrapeResult(False, url, error=str(exc))
+
+def _parse_html(html: str, base_url: str, selectors: dict[str, str] | None, max_chars: int) -> tuple[str | None, str, list[str], dict[str, Any]]:
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(html, "html.parser")
+    title = soup.title.get_text(" ", strip=True) if soup.title else None
+    text = " ".join(soup.get_text(" ", strip=True).split())[:max_chars]
+    links = [urljoin(base_url, a["href"]) for a in soup.select("a[href]") if a.get("href")]
+    metadata: dict[str, Any] = {"content_type": "text/html"}
+    if selectors:
+        from parsel import Selector
+        selected = Selector(text=html)
+        metadata["selected"] = {name: selected.css(selector).getall() for name, selector in selectors.items()}
+    return title, text, links[:2000], metadata
+
+
+def _should_render(html: str) -> bool:
+    lowered = html.lower()
+    return len(html) < 1000 or any(token in lowered for token in ("__next_data__", "id=\"root\"", "id='root'", "enable javascript"))
+
+
+def _playwright_html(url: str, timeout_ms: int) -> str:
+    from playwright.sync_api import sync_playwright
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+            page.wait_for_timeout(750)
+            return page.content()
+        finally:
+            browser.close()
+
 
 
 __all__ = ["ScrapeResult", "scrape_web"]
