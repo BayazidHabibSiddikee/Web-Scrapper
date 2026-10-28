@@ -1,7 +1,7 @@
 # Quick commands for the web-scraper toolkit
 PYTHON := venv/bin/python
 .PHONY: help list details detail-detail detail-session detail-pilot \
-        captcha-test maps-setup clear-output install check docker build run-detached status
+        captcha-test maps-setup clear-output install check docker build run-detached status prescriptions
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -24,6 +24,9 @@ detail-detail: ## Full fill (all brands; runs ~10-20h at 1 req/sec)
 captcha-test: ## Test captcha detection on a URL
 	$(PYTHON) captcha_flow.py https://www.google.com/recaptcha/api2/demo --detect-only
 
+prescriptions: ## Collect prescription-writing reference (images + OA texts + rules)
+	$(PYTHON) prescription_scraper.py --limit 70 --per-query 4 --delay 1.0
+
 maps-setup: ## Start the Google Maps scraper API
 	docker compose -f maps.compose.yml up -d
 	@echo "API ready at http://localhost:8080"
@@ -38,7 +41,7 @@ install: ## Install deps into venv
 	@source venv/bin/activate && pip install -r requirements.txt && playwright install chromium
 
 check: ## Compile-check all modules
-	$(PYTHON) -m py_compile agent_tools.py mcp_server.py captcha_flow.py cookies.py form_fill.py maps_scraper.py scrapling_backend.py scraper.py master_pipeline.py toolkit.py web_scraper/*.py tests/*.py && echo OK
+	$(PYTHON) -m py_compile agent_tools.py mcp_server.py captcha_flow.py cookies.py form_fill.py maps_scraper.py prescription_scraper.py scrapling_backend.py scraper.py master_pipeline.py toolkit.py web_scraper/*.py tests/*.py && echo OK
 
 docker-build: ## Build the production image
 	docker build -t web-scraper .

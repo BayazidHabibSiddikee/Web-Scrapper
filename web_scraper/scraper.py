@@ -38,7 +38,7 @@ def scrape_web(
         for _ in range(6):
             response = httpx.get(
                 current_url,
-                follow_redirects=False,
+                allow_redirects=False,
                 timeout=timeout,
                 headers={"User-Agent": "web-scraper-toolkit/2.0"},
             )

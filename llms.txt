@@ -29,6 +29,18 @@
 - grab_images: full-page screenshot + bulk image download. Args: url|urls[]
 - sitemap_crawl: robots.txt + sitemap.xml URL discovery. Args: url, limit?
 
+## Domain scrapers
+
+- `prescription_scraper.py` → `output/prescriptions/`: collects how doctors write
+  prescriptions for the MedEx app — Wikimedia Commons + Openverse (CC) images with a
+  per-image licence ledger, Europe PMC open-access full texts (prescription-writing audits,
+  WHO core prescribing indicators, legibility medico-legal papers), and reference pages
+  (Wikipedia Rx abbreviations, ISMP error-prone list). Writes `corpus.jsonl` (normative
+  sentences), `licence_ledger.json` (`commercial_use_ok` flag per image),
+  `PRESCRIPTION_STANDARDS_REPORT.md` and `prescription_rules.json` (validation schema for
+  the app's prescription form). Args: `--limit`, `--per-query`, `--delay`,
+  `--only images|text|all`, `--dry-run`. Run: `make prescriptions`.
+
 ## Env / prerequisites
 
 - CAPTCHA solving requires a paid key: `CAPTCHA_API_KEY` (+ `CAPTCHA_SERVICE=2captcha|anti-captcha`).
